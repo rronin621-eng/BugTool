@@ -37,5 +37,6 @@ contextBridge.exposeInMainWorld('bugViewerAPI', {
     ipcRenderer.on('viewer:refresh', () => callback());
   },
   setAlwaysOnTop: (value: boolean) => ipcRenderer.invoke('viewer:set-always-on-top', value),
+  previewImage: (imageUrl: string) => ipcRenderer.invoke('image:preview', imageUrl),
 });
 

@@ -19,6 +19,7 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   ipcMain.removeHandler('bugs:list');
   ipcMain.removeHandler('bug:get');
   ipcMain.removeHandler('bug:update-status');
+  ipcMain.removeHandler('image:preview');
 
   // Close screenshot window (use destroy for reliable cleanup)
   ipcMain.on('screenshot:cancel', (event) => {
@@ -196,6 +197,26 @@ export function setupIpcHandlers(apiBaseUrl: string) {
     } catch (err: any) {
       return { code: 1, message: err.message, data: null };
     }
+  });
+
+  // Open fullscreen image preview window
+  ipcMain.handle('image:preview', (_event, imageUrl: string) => {
+    const { screen } = require('electron');
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    const previewWin = new BrowserWindow({
+      width,
+      height,
+      frame: false,
+      alwaysOnTop: true,
+      transparent: true,
+      backgroundColor: '#00000000',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    const htmlPath = path.join(__dirname, '../renderer/img-preview.html');
+    previewWin.loadURL('file://' + htmlPath + '?src=' + encodeURIComponent(imageUrl));
   });
 }
 

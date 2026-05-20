@@ -4,14 +4,19 @@
     <div class="project-sidebar">
       <div class="sidebar-header">
         <span class="sidebar-title">走查项目</span>
-        <el-button type="primary" link :icon="Plus" @click="openProjectDialog()" title="新建项目" />
+        <button class="icon-btn" @click="openProjectDialog()" title="新建项目">
+          <el-icon><Plus /></el-icon>
+        </button>
       </div>
       <ul class="project-list">
         <li
           class="project-item"
           :class="{ active: filters.inspection_task_id === undefined }"
           @click="selectProject(undefined)"
-        >全部项目</li>
+        >
+          <el-icon class="project-icon"><Collection /></el-icon>
+          <span class="project-name">全部项目</span>
+        </li>
         <li
           v-for="t in taskStore.tasks"
           :key="t.id"
@@ -19,10 +24,15 @@
           :class="{ active: filters.inspection_task_id === t.id }"
           @click="selectProject(t.id)"
         >
+          <el-icon class="project-icon"><FolderOpened /></el-icon>
           <span class="project-name">{{ t.name }}</span>
           <span class="project-actions" @click.stop>
-            <el-button type="primary" link :icon="Edit" size="small" @click="openProjectDialog(t)" />
-            <el-button type="danger" link :icon="Delete" size="small" @click="handleDeleteProject(t)" />
+            <button class="proj-action-btn" @click="openProjectDialog(t)" title="编辑">
+              <el-icon><Edit /></el-icon>
+            </button>
+            <button class="proj-action-btn danger" @click="handleDeleteProject(t)" title="删除">
+              <el-icon><Delete /></el-icon>
+            </button>
           </span>
         </li>
       </ul>
@@ -30,137 +40,160 @@
 
     <!-- 右侧主体 -->
     <div class="bug-main">
+      <!-- 顶部标题栏 -->
       <div class="page-header">
-        <h2>BUG列表</h2>
-        <el-button type="primary" @click="showCreateDialog = true">新建BUG</el-button>
+        <div class="page-title-group">
+          <h1 class="page-title">BUG 列表</h1>
+          <span class="page-subtitle" v-if="bugStore.total > 0">共 {{ bugStore.total }} 条</span>
+        </div>
+        <el-button type="primary" class="create-btn" @click="showCreateDialog = true">
+          <el-icon><Plus /></el-icon>
+          新建 BUG
+        </el-button>
       </div>
 
       <!-- 筛选栏 -->
-      <el-card class="filter-card" shadow="never">
-        <el-form :inline="true" :model="filters" @submit.prevent="handleSearch">
-          <el-form-item label="功能模块">
-            <el-select v-model="filters.module_id" clearable placeholder="全部" style="width: 140px">
-              <el-option v-for="m in moduleStore.modules" :key="m.id" :label="m.name" :value="m.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="搜索">
-            <el-input v-model="filters.keyword" clearable placeholder="标题/描述" style="width: 200px" />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" @click="handleSearch">搜索</el-button>
-            <el-button @click="handleReset">重置</el-button>
-          </el-form-item>
-        </el-form>
-      </el-card>
+      <div class="filter-bar">
+        <div class="filter-field">
+          <label class="filter-label">功能模块</label>
+          <el-select v-model="filters.module_id" clearable placeholder="全部" size="default">
+            <el-option v-for="m in moduleStore.modules" :key="m.id" :label="m.name" :value="m.id" />
+          </el-select>
+        </div>
+        <div class="filter-field search-field">
+          <el-input
+            v-model="filters.keyword"
+            clearable
+            placeholder="搜索标题 / 描述..."
+            :prefix-icon="Search"
+            @keyup.enter="handleSearch"
+          />
+        </div>
+        <el-button type="primary" @click="handleSearch">搜索</el-button>
+        <el-button @click="handleReset">重置</el-button>
+      </div>
 
       <!-- 表格 -->
-      <el-table
-        :data="bugStore.bugs"
-        v-loading="bugStore.loading"
-        stripe
-        style="width: 100%"
-        :default-sort="{ prop: 'id', order: 'descending' }"
-      >
-        <el-table-column prop="id" label="ID" width="70" sortable />
-        <el-table-column prop="title" label="标题" min-width="200">
-          <template #default="{ row }">
-            <el-link type="primary" @click="router.push(`/bugs/${row.id}`)">{{ row.title }}</el-link>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          prop="bug_type"
-          label="类型"
-          width="110"
-          :filters="BUG_TYPES.map(t => ({ text: t.label, value: t.value }))"
-          :filter-method="(val: string, row: any) => row.bug_type === val"
-          filter-placement="bottom"
+      <div class="table-wrap">
+        <el-table
+          :data="bugStore.bugs"
+          v-loading="bugStore.loading"
+          row-class-name="table-row"
+          :default-sort="{ prop: 'id', order: 'descending' }"
+          style="width: 100%"
         >
-          <template #default="{ row }">
-            {{ getLabel(BUG_TYPES, row.bug_type) }}
-          </template>
-        </el-table-column>
+          <el-table-column prop="id" label="ID" width="68" sortable>
+            <template #default="{ row }">
+              <span class="id-cell">#{{ row.id }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column
-          prop="status"
-          label="状态"
-          width="110"
-          :filters="BUG_STATUSES.map(s => ({ text: s.label, value: s.value }))"
-          :filter-method="(val: string, row: any) => row.status === val"
-          filter-placement="bottom"
-        >
-          <template #default="{ row }">
-            <BugStatusTag :status="row.status" />
-          </template>
-        </el-table-column>
+          <el-table-column prop="title" label="标题" min-width="200">
+            <template #default="{ row }">
+              <span class="title-link" @click="router.push(`/bugs/${row.id}`)">{{ row.title }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column
-          prop="priority"
-          label="优先级"
-          width="110"
-          :filters="BUG_PRIORITIES.map(p => ({ text: p.label, value: p.value }))"
-          :filter-method="(val: string, row: any) => row.priority === val"
-          filter-placement="bottom"
-          sortable
-        >
-          <template #default="{ row }">
-            <el-tag :type="getPriorityType(row.priority)" size="small">
-              {{ getLabel(BUG_PRIORITIES, row.priority) }}
-            </el-tag>
-          </template>
-        </el-table-column>
+          <el-table-column
+            prop="bug_type"
+            label="类型"
+            width="110"
+            :filters="BUG_TYPES.map(t => ({ text: t.label, value: t.value }))"
+            :filter-method="(val: string, row: any) => row.bug_type === val"
+            filter-placement="bottom"
+          >
+            <template #default="{ row }">
+              <span class="type-tag">{{ getLabel(BUG_TYPES, row.bug_type) }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column prop="inspection_task_id" label="走查项目" width="140">
-          <template #default="{ row }">
-            {{ getTaskName(row.inspection_task_id) }}
-          </template>
-        </el-table-column>
+          <el-table-column
+            prop="status"
+            label="状态"
+            width="105"
+            :filters="BUG_STATUSES.map(s => ({ text: s.label, value: s.value }))"
+            :filter-method="(val: string, row: any) => row.status === val"
+            filter-placement="bottom"
+          >
+            <template #default="{ row }">
+              <BugStatusTag :status="row.status" />
+            </template>
+          </el-table-column>
 
-        <el-table-column
-          prop="module_id"
-          label="功能模块"
-          width="120"
-          :filters="moduleStore.modules.map(m => ({ text: m.name, value: m.id }))"
-          :filter-method="(val: number, row: any) => row.module_id === val"
-          filter-placement="bottom"
-        >
-          <template #default="{ row }">
-            {{ getModuleName(row.module_id) }}
-          </template>
-        </el-table-column>
+          <el-table-column
+            prop="priority"
+            label="优先级"
+            width="105"
+            :filters="BUG_PRIORITIES.map(p => ({ text: p.label, value: p.value }))"
+            :filter-method="(val: string, row: any) => row.priority === val"
+            filter-placement="bottom"
+            sortable
+          >
+            <template #default="{ row }">
+              <span class="priority-dot" :class="`priority-${row.priority}`"></span>
+              <span class="priority-text">{{ getLabel(BUG_PRIORITIES, row.priority) }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column
-          prop="reporter_id"
-          label="录入人"
-          width="110"
-          :filters="userStore.users.map(u => ({ text: u.display_name, value: u.id }))"
-          :filter-method="(val: number, row: any) => row.reporter_id === val"
-          filter-placement="bottom"
-        >
-          <template #default="{ row }">
-            {{ getUserName(row.reporter_id) }}
-          </template>
-        </el-table-column>
+          <el-table-column prop="inspection_task_id" label="走查项目" width="140">
+            <template #default="{ row }">
+              <span class="meta-text">{{ getTaskName(row.inspection_task_id) }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column
-          prop="assignee_id"
-          label="接收人"
-          width="110"
-          :filters="[{ text: '未分配', value: 0 }, ...userStore.users.map(u => ({ text: u.display_name, value: u.id }))]"
-          :filter-method="(val: number, row: any) => val === 0 ? !row.assignee_id : row.assignee_id === val"
-          filter-placement="bottom"
-        >
-          <template #default="{ row }">
-            {{ row.assignee_id ? getUserName(row.assignee_id) : '未分配' }}
-          </template>
-        </el-table-column>
+          <el-table-column
+            prop="module_id"
+            label="功能模块"
+            width="120"
+            :filters="moduleStore.modules.map(m => ({ text: m.name, value: m.id }))"
+            :filter-method="(val: number, row: any) => row.module_id === val"
+            filter-placement="bottom"
+          >
+            <template #default="{ row }">
+              <span class="meta-text">{{ getModuleName(row.module_id) }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column prop="created_at" label="创建时间" width="170" sortable>
-          <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
-          </template>
-        </el-table-column>
-      </el-table>
+          <el-table-column
+            prop="reporter_id"
+            label="录入人"
+            width="110"
+            :filters="userStore.users.map(u => ({ text: u.display_name, value: u.id }))"
+            :filter-method="(val: number, row: any) => row.reporter_id === val"
+            filter-placement="bottom"
+          >
+            <template #default="{ row }">
+              <div class="avatar-cell">
+                <div class="avatar-mini">{{ getAvatarChar(row.reporter_id) }}</div>
+                <span>{{ getUserName(row.reporter_id) }}</span>
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column
+            prop="assignee_id"
+            label="接收人"
+            width="110"
+            :filters="[{ text: '未分配', value: 0 }, ...userStore.users.map(u => ({ text: u.display_name, value: u.id }))]"
+            :filter-method="(val: number, row: any) => val === 0 ? !row.assignee_id : row.assignee_id === val"
+            filter-placement="bottom"
+          >
+            <template #default="{ row }">
+              <div class="avatar-cell" v-if="row.assignee_id">
+                <div class="avatar-mini assignee">{{ getAvatarChar(row.assignee_id) }}</div>
+                <span>{{ getUserName(row.assignee_id) }}</span>
+              </div>
+              <span class="unassigned" v-else>未分配</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column prop="created_at" label="创建时间" width="155" sortable>
+            <template #default="{ row }">
+              <span class="date-text">{{ formatDate(row.created_at) }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
 
       <!-- 分页 -->
       <div class="pagination-wrap">
@@ -177,59 +210,98 @@
     </div>
 
     <!-- 新建BUG弹窗 -->
-    <el-dialog v-model="showCreateDialog" title="新建BUG" width="560px">
-      <el-form :model="createForm" label-width="90px">
-        <el-form-item label="标题" required>
-          <el-input v-model="createForm.title" placeholder="BUG标题" />
-        </el-form-item>
-        <el-form-item label="类型" required>
-          <el-select v-model="createForm.bug_type" style="width: 100%">
-            <el-option v-for="t in BUG_TYPES" :key="t.value" :label="t.label" :value="t.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="优先级">
-          <el-select v-model="createForm.priority" style="width: 100%">
-            <el-option v-for="p in BUG_PRIORITIES" :key="p.value" :label="p.label" :value="p.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="录入人" required>
-          <el-select v-model="createForm.reporter_id" style="width: 100%">
-            <el-option v-for="u in userStore.users" :key="u.id" :label="u.display_name" :value="u.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="接收人">
-          <el-select v-model="createForm.assignee_id" clearable style="width: 100%">
-            <el-option v-for="u in userStore.users" :key="u.id" :label="u.display_name" :value="u.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="走查项目">
-          <el-select v-model="createForm.inspection_task_id" clearable placeholder="不关联" style="width: 100%">
-            <el-option v-for="t in taskStore.tasks" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="功能模块">
-          <el-select v-model="createForm.module_id" clearable placeholder="不关联" style="width: 100%">
-            <el-option v-for="m in moduleStore.modules" :key="m.id" :label="m.name" :value="m.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="createForm.description" type="textarea" :rows="3" />
-        </el-form-item>
-        <el-form-item label="复现步骤">
-          <el-input v-model="createForm.reproduction_steps" type="textarea" :rows="3" placeholder="请描述复现步骤..." />
-        </el-form-item>
-        <el-form-item label="环境链接">
-          <el-input v-model="createForm.env_url" placeholder="http://..." clearable />
-        </el-form-item>
+    <el-dialog v-model="showCreateDialog" title="新建 BUG" width="600px" class="bug-dialog">
+      <el-form :model="createForm" label-width="80px" class="bug-form">
+        <!-- 基础信息 -->
+        <div class="form-section">
+          <div class="form-section-title">基础信息</div>
+          <el-form-item label="标题" required>
+            <el-input v-model="createForm.title" placeholder="请输入 BUG 标题" />
+          </el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="BUG 类型" required>
+                <el-select v-model="createForm.bug_type" style="width: 100%">
+                  <el-option v-for="t in BUG_TYPES" :key="t.value" :label="t.label" :value="t.value" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="优先级">
+                <el-select v-model="createForm.priority" style="width: 100%">
+                  <el-option v-for="p in BUG_PRIORITIES" :key="p.value" :label="p.label" :value="p.value" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
+
+        <!-- 人员信息 -->
+        <div class="form-section">
+          <div class="form-section-title">人员信息</div>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="录入人" required>
+                <el-select v-model="createForm.reporter_id" style="width: 100%">
+                  <el-option v-for="u in userStore.users" :key="u.id" :label="u.display_name" :value="u.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="接收人">
+                <el-select v-model="createForm.assignee_id" clearable style="width: 100%">
+                  <el-option v-for="u in userStore.users" :key="u.id" :label="u.display_name" :value="u.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
+
+        <!-- 关联信息 -->
+        <div class="form-section">
+          <div class="form-section-title">关联信息</div>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="走查项目">
+                <el-select v-model="createForm.inspection_task_id" clearable placeholder="不关联" style="width: 100%">
+                  <el-option v-for="t in taskStore.tasks" :key="t.id" :label="t.name" :value="t.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="功能模块">
+                <el-select v-model="createForm.module_id" clearable placeholder="不关联" style="width: 100%">
+                  <el-option v-for="m in moduleStore.modules" :key="m.id" :label="m.name" :value="m.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-form-item label="环境链接">
+            <el-input v-model="createForm.env_url" placeholder="https://..." clearable />
+          </el-form-item>
+        </div>
+
+        <!-- 详细描述 -->
+        <div class="form-section">
+          <div class="form-section-title">详细描述</div>
+          <el-form-item label="描述">
+            <el-input v-model="createForm.description" type="textarea" :rows="3" placeholder="BUG 描述（可选）" />
+          </el-form-item>
+          <el-form-item label="复现步骤">
+            <el-input v-model="createForm.reproduction_steps" type="textarea" :rows="3" placeholder="1. 打开页面&#10;2. 点击按钮&#10;3. 观察现象..." />
+          </el-form-item>
+        </div>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleCreate">提交</el-button>
+        <div class="dialog-footer">
+          <el-button @click="showCreateDialog = false">取消</el-button>
+          <el-button type="primary" :loading="submitting" @click="handleCreate">提交 BUG</el-button>
+        </div>
       </template>
     </el-dialog>
 
     <!-- 新建/编辑项目弹窗 -->
-    <el-dialog v-model="showProjectDialog" :title="editingProject ? '编辑项目' : '新建项目'" width="480px">
+    <el-dialog v-model="showProjectDialog" :title="editingProject ? '编辑项目' : '新建项目'" width="500px" class="bug-dialog">
       <el-form :model="projectForm" label-width="100px">
         <el-form-item label="项目名称" required>
           <el-input v-model="projectForm.name" placeholder="请输入项目名称" />
@@ -238,12 +310,12 @@
           <el-input v-model="projectForm.description" type="textarea" :rows="2" placeholder="项目描述（可选）" />
         </el-form-item>
         <el-form-item label="默认负责人">
-          <el-select v-model="projectForm.default_assignee_id" clearable placeholder="截图提交bug时的默认接收人" style="width: 100%">
+          <el-select v-model="projectForm.default_assignee_id" clearable placeholder="截图提交 bug 时的默认接收人" style="width: 100%">
             <el-option v-for="u in userStore.users" :key="u.id" :label="u.display_name" :value="u.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="默认环境路径">
-          <el-input v-model="projectForm.default_env_url" placeholder="http://..." clearable />
+          <el-input v-model="projectForm.default_env_url" placeholder="https://..." clearable />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="projectForm.status" style="width: 100%">
@@ -253,8 +325,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showProjectDialog = false">取消</el-button>
-        <el-button type="primary" :loading="projectSubmitting" @click="handleSaveProject">保存</el-button>
+        <div class="dialog-footer">
+          <el-button @click="showProjectDialog = false">取消</el-button>
+          <el-button type="primary" :loading="projectSubmitting" @click="handleSaveProject">保存</el-button>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -264,7 +338,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Collection, FolderOpened, Search } from '@element-plus/icons-vue'
 import { useBugStore } from '../stores/bug'
 import { useUserStore } from '../stores/user'
 import { useInspectionTaskStore } from '../stores/inspection_task'
@@ -339,7 +413,7 @@ async function handleSaveProject() {
 
 async function handleDeleteProject(task: InspectionTask) {
   try {
-    await ElMessageBox.confirm(`确定要删除项目「${task.name}」吗？删除后相关BUG不会被删除。`, '确认删除', {
+    await ElMessageBox.confirm(`确定要删除项目「${task.name}」吗？删除后相关 BUG 不会被删除。`, '确认删除', {
       type: 'warning',
       confirmButtonText: '删除',
       confirmButtonClass: 'el-button--danger',
@@ -382,12 +456,13 @@ function getLabel(list: ReadonlyArray<{ value: string; label: string }>, val: st
   return list.find(i => i.value === val)?.label || val
 }
 
-function getPriorityType(priority: string) {
-  return BUG_PRIORITIES.find(i => i.value === priority)?.type || 'info'
-}
-
 function getUserName(id: number) {
   return userStore.users.find(u => u.id === id)?.display_name || `用户${id}`
+}
+
+function getAvatarChar(id: number) {
+  const name = userStore.users.find(u => u.id === id)?.display_name || '?'
+  return name.charAt(0)
 }
 
 function getTaskName(id?: number | null) {
@@ -402,7 +477,7 @@ function getModuleName(id?: number | null) {
 
 function formatDate(dateStr?: string) {
   if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
+  return new Date(dateStr).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 function selectProject(taskId: number | undefined) {
@@ -465,16 +540,15 @@ onMounted(() => {
 <style scoped>
 .bug-list-layout {
   display: flex;
-  height: 100%;
-  min-height: 100vh;
+  height: 100vh;
 }
 
 /* ── 左侧项目栏 ── */
 .project-sidebar {
-  width: 180px;
+  width: 190px;
   flex-shrink: 0;
   background: #fff;
-  border-right: 1px solid #e4e7ed;
+  border-right: 1px solid #eaecf0;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -484,46 +558,78 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 10px 8px 16px;
+  padding: 18px 12px 10px 16px;
 }
 
 .sidebar-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #909399;
+  font-size: 11px;
+  font-weight: 700;
+  color: #9aa0ac;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
+}
+
+.icon-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  padding: 0;
+}
+
+.icon-btn:hover {
+  background: #f4f4f4;
+  color: #111;
+  border-color: #999;
 }
 
 .project-list {
   list-style: none;
-  padding: 0 8px;
+  padding: 4px 8px 8px;
   flex: 1;
 }
 
 .project-item {
   padding: 7px 8px;
-  border-radius: 6px;
+  border-radius: 7px;
   font-size: 13px;
-  color: #606266;
+  color: #64748b;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  margin-bottom: 2px;
+  transition: background 0.12s, color 0.12s;
+  margin-bottom: 1px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
+  gap: 7px;
 }
 
 .project-item:hover {
-  background: #f0f2f5;
-  color: #303133;
+  background: #f8fafc;
+  color: #334155;
 }
 
 .project-item.active {
-  background: #ecf5ff;
-  color: #409eff;
-  font-weight: 500;
+  background: #f0f0f0;
+  color: #111;
+  font-weight: 600;
+}
+
+.project-item.active .project-icon {
+  color: #111;
+}
+
+.project-icon {
+  font-size: 14px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: color 0.12s;
 }
 
 .project-name {
@@ -538,44 +644,281 @@ onMounted(() => {
 .project-actions {
   display: none;
   align-items: center;
-  gap: 0px;
+  gap: 2px;
   flex-shrink: 0;
 }
 
-.project-item:hover .project-actions {
+.project-item:hover .project-actions,
+.project-item.active .project-actions {
   display: flex;
 }
 
-.project-item.active .project-actions {
+.proj-action-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #94a3b8;
+  transition: background 0.12s, color 0.12s;
+  padding: 0;
+}
+
+.proj-action-btn:hover {
+  background: #ebebeb;
+  color: #111111;
+}
+
+.proj-action-btn.danger:hover {
+  background: #fef2f2;
+  color: #ef4444;
 }
 
 /* ── 右侧主体 ── */
 .bug-main {
   flex: 1;
   min-width: 0;
-  padding: 20px;
+  padding: 24px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
+/* ── 顶部标题栏 ── */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
 }
 
-.page-header h2 {
-  margin: 0;
+.page-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
-.filter-card {
-  margin-bottom: 16px;
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.3px;
 }
 
+.page-subtitle {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.create-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+}
+
+/* ── 筛选栏 ── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+.filter-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-label {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.search-field {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* ── 表格 ── */
+.table-wrap {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #eaecf0;
+  overflow: hidden;
+}
+
+.table-wrap :deep(.el-table) {
+  border-radius: 10px;
+}
+
+.table-wrap :deep(.el-table th.el-table__cell) {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid #eaecf0;
+}
+
+.table-wrap :deep(.el-table td.el-table__cell) {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.table-wrap :deep(.table-row:hover td.el-table__cell) {
+  background: #fafafa !important;
+}
+
+/* ── 表格单元格 ── */
+.id-cell {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.title-link {
+  color: #334155;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.title-link:hover {
+  color: #111;
+  text-decoration: underline;
+}
+
+.type-tag {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.priority-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  flex-shrink: 0;
+}
+
+.priority-critical { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.5); }
+.priority-high     { background: #f97316; }
+.priority-medium   { background: #eab308; }
+.priority-low      { background: #22c55e; }
+
+.priority-text {
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.meta-text {
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+.avatar-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.avatar-mini {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #333;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.avatar-mini.assignee {
+  background: #666;
+}
+
+.unassigned {
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.date-text {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* ── 分页 ── */
 .pagination-wrap {
-  margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+  padding-bottom: 8px;
+}
+
+/* ── 弹窗 ── */
+.bug-form {
+  padding: 0 4px;
+}
+
+.form-section {
+  margin-bottom: 20px;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+.form-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+</style>
+
+<style>
+/* 全局覆盖弹窗样式 */
+.bug-dialog .el-dialog__header {
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 16px;
+  margin-right: 0;
+}
+
+.bug-dialog .el-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.bug-dialog .el-dialog__footer {
+  border-top: 1px solid #f1f5f9;
+  padding-top: 16px;
 }
 </style>

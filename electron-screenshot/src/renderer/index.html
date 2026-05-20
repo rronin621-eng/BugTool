@@ -75,58 +75,96 @@
 
       <!-- 右侧：表单字段 -->
       <div class="bug-form-fields">
-        <h3>录入BUG</h3>
-        <div class="form-group">
-          <label>标题 <span class="required">*</span></label>
-          <input type="text" id="bugTitle" placeholder="BUG标题">
+        <h3>录入 BUG</h3>
+
+        <div class="bug-form-content">
+          <!-- 基础信息 -->
+          <div class="form-section">
+            <div class="form-section-label">基础信息</div>
+            <div class="form-group">
+              <label>标题 <span class="required">*</span></label>
+              <input type="text" id="bugTitle" placeholder="请输入 BUG 标题">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>BUG 类型 <span class="required">*</span></label>
+                <select id="bugType">
+                  <option value="ui">UI 缺陷</option>
+                  <option value="functional">功能缺陷</option>
+                  <option value="performance">性能问题</option>
+                  <option value="security">安全问题</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>优先级</label>
+                <select id="bugPriority">
+                  <option value="critical">紧急</option>
+                  <option value="high">高</option>
+                  <option value="medium" selected>中</option>
+                  <option value="low">低</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 人员信息 -->
+          <div class="form-section">
+            <div class="form-section-label">人员信息</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>录入人 <span class="required">*</span></label>
+                <select id="bugReporter"></select>
+              </div>
+              <div class="form-group">
+                <label>接收人</label>
+                <select id="bugAssignee">
+                  <option value="">-- 请选择 --</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 关联信息 -->
+          <div class="form-section">
+            <div class="form-section-label">关联信息</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>走查项目</label>
+                <select id="bugInspectionTask">
+                  <option value="">-- 不关联 --</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>功能模块</label>
+                <select id="bugModule">
+                  <option value="">-- 不关联 --</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>环境链接</label>
+              <input type="url" id="bugEnvUrl" placeholder="https://...">
+            </div>
+          </div>
+
+          <!-- 详细描述 -->
+          <div class="form-section">
+            <div class="form-section-label">详细描述</div>
+            <div class="form-group">
+              <label>BUG 描述</label>
+              <textarea id="bugDescription" rows="3" placeholder="描述 BUG 现象..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>复现步骤</label>
+              <textarea id="bugReproductionSteps" rows="3" placeholder="1. 打开页面&#10;2. 执行操作&#10;3. 观察现象..."></textarea>
+            </div>
+          </div>
         </div>
-        <div class="form-group">
-          <label>BUG类型 <span class="required">*</span></label>
-          <select id="bugType">
-            <option value="ui">UI缺陷</option>
-            <option value="functional">功能缺陷</option>
-            <option value="performance">性能问题</option>
-            <option value="security">安全问题</option>
-            <option value="other">其他</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>录入人 <span class="required">*</span></label>
-          <select id="bugReporter"></select>
-        </div>
-        <div class="form-group">
-          <label>接收人</label>
-          <select id="bugAssignee">
-            <option value="">-- 请选择 --</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>描述</label>
-          <textarea id="bugDescription" rows="4" placeholder="BUG描述（可选）"></textarea>
-        </div>
-        <div class="form-group">
-          <label>走查项目</label>
-          <select id="bugInspectionTask">
-            <option value="">-- 不关联 --</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>功能模块</label>
-          <select id="bugModule">
-            <option value="">-- 不关联 --</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>复现步骤</label>
-          <textarea id="bugReproductionSteps" rows="3" placeholder="请描述复现步骤..."></textarea>
-        </div>
-        <div class="form-group">
-          <label>环境链接</label>
-          <input type="url" id="bugEnvUrl" placeholder="http://...">
-        </div>
+
         <div class="form-actions">
           <button id="btnBugCancel" class="btn-secondary">取消</button>
-          <button id="btnBugSubmit" class="btn-primary">提交</button>
+          <button id="btnBugSubmit" class="btn-primary">提交 BUG</button>
         </div>
         <div id="submitStatus" class="submit-status hidden"></div>
       </div>

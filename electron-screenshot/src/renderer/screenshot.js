@@ -992,6 +992,8 @@ document.getElementById('btnBugCancel').addEventListener('click', () => {
 document.getElementById('btnBugSubmit').addEventListener('click', async () => {
   const title = document.getElementById('bugTitle').value.trim();
   const bugType = document.getElementById('bugType').value;
+  const priorityEl = document.getElementById('bugPriority');
+  const priority = priorityEl ? priorityEl.value : 'medium';
   const reporterId = parseInt(document.getElementById('bugReporter').value);
   const assigneeId = document.getElementById('bugAssignee').value;
   const description = document.getElementById('bugDescription').value.trim();
@@ -1022,6 +1024,7 @@ document.getElementById('btnBugSubmit').addEventListener('click', async () => {
       title,
       description,
       bug_type: bugType,
+      priority,
       reporter_id: reporterId,
       assignee_id: assigneeId ? parseInt(assigneeId) : null,
       env_url: envUrl,

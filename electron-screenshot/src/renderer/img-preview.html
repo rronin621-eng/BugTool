@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' http://127.0.0.1:8000; img-src 'self' http://127.0.0.1:8000 data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+  <title>图片预览</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      cursor: zoom-out;
+    }
+    img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255,255,255,0.35);
+      font-size: 12px;
+      font-family: -apple-system, sans-serif;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <img id="img" src="" alt="预览图" />
+  <div class="hint">点击任意处或按 Esc 关闭</div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const src = params.get('src');
+    if (src) document.getElementById('img').src = decodeURIComponent(src);
+    document.body.addEventListener('click', () => window.close());
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
+  </script>
+</body>
+</html>

@@ -414,17 +414,12 @@ function closeDetail() {
 
 // ── 图片预览 ──────────────────────────────────────────────────────────────
 function showImgOverlay(src) {
-  let overlay = $('imgOverlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'imgOverlay';
-    const img = document.createElement('img');
-    overlay.appendChild(img);
-    document.body.appendChild(overlay);
-    overlay.addEventListener('click', () => overlay.classList.remove('open'));
+  if (window.bugViewerAPI && window.bugViewerAPI.previewImage) {
+    window.bugViewerAPI.previewImage(src);
+  } else {
+    // fallback: open in new tab
+    window.open(src, '_blank');
   }
-  overlay.querySelector('img').src = src;
-  overlay.classList.add('open');
 }
 
 // ── 置顶按钮 ──────────────────────────────────────────────────────────────
