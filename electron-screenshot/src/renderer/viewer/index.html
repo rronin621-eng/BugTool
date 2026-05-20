@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' http://127.0.0.1:8000 data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>BUG 查看器</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <!-- 自定义标题栏（可拖拽） -->
+  <div id="titlebar">
+    <span class="titlebar-text">BUG 查看器</span>
+    <div class="titlebar-controls">
+      <button id="btnPin" title="置顶" class="pin-btn">&#128204;</button>
+      <button id="btnFilter" title="筛选" class="filter-icon-btn">&#9783;</button>
+      <button id="btnRefresh" title="刷新">&#8635;</button>
+      <button id="btnClose" title="关闭">&#10005;</button>
+    </div>
+  </div>
+
+  <!-- 用户选择区 -->
+  <div id="userBar">
+    <label for="userSelect">查看用户</label>
+    <select id="userSelect">
+      <option value="">-- 选择用户 --</option>
+    </select>
+    <span id="bugCount"></span>
+  </div>
+
+  <!-- 三页签 -->
+  <div id="tabBar">
+    <button class="tab-btn active" data-tab="pending">待处理<span class="tab-badge" id="badge-pending"></span></button>
+    <button class="tab-btn" data-tab="review">待验收<span class="tab-badge" id="badge-review"></span></button>
+    <button class="tab-btn" data-tab="closed">已关闭<span class="tab-badge" id="badge-closed"></span></button>
+  </div>
+
+  <!-- 筛选抽屉 -->
+  <div id="filterDrawer" class="filter-drawer">
+    <div class="filter-drawer-header">
+      <span>筛选条件</span>
+      <button id="btnFilterClose" class="filter-close-btn">&#10005;</button>
+    </div>
+    <div class="filter-drawer-body">
+      <div class="filter-group">
+        <div class="filter-label">优先级</div>
+        <div class="filter-chips" id="filterPriority">
+          <button class="chip active" data-value="">全部</button>
+          <button class="chip" data-value="critical">紧急</button>
+          <button class="chip" data-value="high">高</button>
+          <button class="chip" data-value="medium">中</button>
+          <button class="chip" data-value="low">低</button>
+        </div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">类型</div>
+        <div class="filter-chips" id="filterType">
+          <button class="chip active" data-value="">全部</button>
+          <button class="chip" data-value="ui">UI</button>
+          <button class="chip" data-value="functional">功能</button>
+          <button class="chip" data-value="performance">性能</button>
+          <button class="chip" data-value="security">安全</button>
+          <button class="chip" data-value="other">其他</button>
+        </div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">关键词</div>
+        <input type="text" id="filterKeyword" class="filter-input" placeholder="搜索标题..." />
+      </div>
+      <div class="filter-actions">
+        <button class="filter-btn-reset" id="btnFilterReset">重置</button>
+        <button class="filter-btn-apply" id="btnFilterApply">应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bug 卡片列表 -->
+  <div id="bugList">
+    <div id="listHint" class="hint-text">请选择用户以加载 BUG 列表</div>
+  </div>
+
+  <!-- 详情面板（从底部滑入，覆盖列表） -->
+  <div id="detailPanel">
+    <div id="detailHeader">
+      <button id="btnDetailBack" title="返回列表">&#8592; 返回</button>
+      <span id="detailBadge" class="status-badge"></span>
+    </div>
+    <div id="detailContent"></div>
+  </div>
+
+  <script src="viewer.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "bug-tool",
+  "version": "1.0.0",
+  "description": "BUG录入系统 + 桌面截图工具",
+  "private": true,
+  "scripts": {
+    "dev:server": "cd server && python3 -m uvicorn main:app --reload --host 127.0.0.1 --port 8000",
+    "dev:web": "cd web && npm run dev",
+    "dev:electron": "cd electron-screenshot && npm run dev",
+    "build:web": "cd web && npm run build",
+    "build:electron": "cd electron-screenshot && npm run build"
+  }
+}

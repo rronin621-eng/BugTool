@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>BUG截图工具</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 截图遮罩层 -->
+  <div id="overlay" class="overlay hidden">
+    <canvas id="bgCanvas"></canvas>
+    <canvas id="drawCanvas"></canvas>
+  </div>
+
+  <!-- 选区信息 -->
+  <div id="selectionInfo" class="selection-info hidden">
+    <span id="selectionSize"></span>
+  </div>
+
+  <!-- 工具栏 -->
+  <div id="toolbar" class="toolbar hidden">
+    <button id="btnRect" class="tool-btn active" title="矩形框">▭</button>
+    <button id="btnArrow" class="tool-btn" title="箭头">→</button>
+    <button id="btnPen" class="tool-btn" title="画笔">✎</button>
+    <button id="btnText" class="tool-btn" title="文字">T</button>
+    <span class="toolbar-divider"></span>
+    <button id="btnUndo" class="tool-btn" title="撤销 (Ctrl+Z)">↩</button>
+    <button id="btnClear" class="tool-btn" title="清除标注">🗑</button>
+    <span class="toolbar-divider"></span>
+    <label class="color-picker">
+      <input type="color" id="colorPicker" value="#ff0000">
+    </label>
+    <select id="lineWidth" class="line-width-select">
+      <option value="2">细</option>
+      <option value="3" selected>中</option>
+      <option value="5">粗</option>
+    </select>
+    <span class="toolbar-divider"></span>
+    <button id="btnCopy" class="tool-btn action-btn" title="复制到剪贴板">📋</button>
+    <button id="btnDownload" class="tool-btn action-btn" title="保存到桌面">💾</button>
+    <button id="btnBug" class="tool-btn bug-btn" title="录入BUG">录入</button>
+    <span class="toolbar-divider"></span>
+    <button id="btnCancel" class="tool-btn cancel-btn small" title="取消 (Esc)">✕</button>
+  </div>
+
+  <!-- BUG录入弹窗 -->
+  <div id="bugFormOverlay" class="bug-form-overlay hidden">
+    <div class="bug-form-container">
+      <!-- 左侧：截图预览 + 继续标注 -->
+      <div class="bug-form-preview">
+        <div class="bug-form-preview-toolbar">
+          <button id="btnBugRect" class="tool-btn active" title="矩形框">▭</button>
+          <button id="btnBugArrow" class="tool-btn" title="箭头">→</button>
+          <button id="btnBugPen" class="tool-btn" title="画笔">✎</button>
+          <button id="btnBugText" class="tool-btn" title="文字">T</button>
+          <span class="toolbar-divider"></span>
+          <label class="color-picker">
+            <input type="color" id="bugColorPicker" value="#ff0000">
+          </label>
+          <select id="bugLineWidth" class="line-width-select">
+            <option value="2">细</option>
+            <option value="3" selected>中</option>
+            <option value="5">粗</option>
+          </select>
+          <span class="toolbar-divider"></span>
+          <button id="btnBugUndo" class="tool-btn" title="撤销">↩</button>
+          <button id="btnBugClear" class="tool-btn" title="清除标注">🗑</button>
+        </div>
+        <div class="bug-form-preview-canvas-wrapper">
+          <canvas id="bugFormCanvas"></canvas>
+        </div>
+        <!-- 文字输入框（用于弹窗内文字标注） -->
+        <input type="text" id="bugTextInput" class="text-input hidden" placeholder="输入文字...">
+      </div>
+
+      <!-- 右侧：表单字段 -->
+      <div class="bug-form-fields">
+        <h3>录入BUG</h3>
+        <div class="form-group">
+          <label>标题 <span class="required">*</span></label>
+          <input type="text" id="bugTitle" placeholder="BUG标题">
+        </div>
+        <div class="form-group">
+          <label>BUG类型 <span class="required">*</span></label>
+          <select id="bugType">
+            <option value="ui">UI缺陷</option>
+            <option value="functional">功能缺陷</option>
+            <option value="performance">性能问题</option>
+            <option value="security">安全问题</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>录入人 <span class="required">*</span></label>
+          <select id="bugReporter"></select>
+        </div>
+        <div class="form-group">
+          <label>接收人</label>
+          <select id="bugAssignee">
+            <option value="">-- 请选择 --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <textarea id="bugDescription" rows="4" placeholder="BUG描述（可选）"></textarea>
+        </div>
+        <div class="form-group">
+          <label>走查项目</label>
+          <select id="bugInspectionTask">
+            <option value="">-- 不关联 --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>功能模块</label>
+          <select id="bugModule">
+            <option value="">-- 不关联 --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>复现步骤</label>
+          <textarea id="bugReproductionSteps" rows="3" placeholder="请描述复现步骤..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>环境链接</label>
+          <input type="url" id="bugEnvUrl" placeholder="http://...">
+        </div>
+        <div class="form-actions">
+          <button id="btnBugCancel" class="btn-secondary">取消</button>
+          <button id="btnBugSubmit" class="btn-primary">提交</button>
+        </div>
+        <div id="submitStatus" class="submit-status hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文字输入框（用于文字标注） -->
+  <input type="text" id="textInput" class="text-input hidden" placeholder="输入文字...">
+
+  <!-- Toast 提示 -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="screenshot.js"></script>
+</body>
+</html>
