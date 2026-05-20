@@ -188,7 +188,11 @@ async function loadBugs(silent = false) {
     state.bugs = mergeAndDedup(list1, list2);
 
     updateTabBadges();
-    renderCurrentTab();
+    if (silent) {
+      patchCurrentTab();
+    } else {
+      renderCurrentTab();
+    }
   } catch (e) {
     console.error('[Viewer] loadBugs error', e);
     if (!silent) {
@@ -248,6 +252,80 @@ function renderCurrentTab() {
   hideInlineActionBar();
   bugs.forEach((bug, index) => {
     elBugList.appendChild(buildCard(bug, index + 1));
+  });
+}
+
+// ── 静默 diff 更新（轮询刷新时使用，不重建 DOM，不打断用户操作）─────────────
+function patchCurrentTab() {
+  const statuses = TABS[state.activeTab].statuses;
+  const statusOrder = { new: 0, in_progress: 1, fixed: 2, closed: 3 };
+  const { priority, bug_type, keyword } = state.activeFilter;
+
+  const bugs = state.bugs
+    .filter((b) => statuses.includes(b.status))
+    .filter((b) => !priority || b.priority === priority)
+    .filter((b) => !bug_type || b.bug_type === bug_type)
+    .filter((b) => !keyword || (b.title && b.title.includes(keyword)) || (b.description && b.description.includes(keyword)))
+    .sort((a, b) => {
+      const diff = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+      if (diff !== 0) return diff;
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+
+  const total = bugs.length;
+  const allTotal = state.bugs.length;
+  const hasFilter = priority || bug_type || keyword;
+  elBugCount.textContent = allTotal > 0
+    ? (hasFilter ? `筛选 ${total} / ${allTotal} 条` : `共 ${allTotal} 条`)
+    : '';
+
+  // 如果列表还未初始化（空占位状态），直接全量渲染
+  if (!elBugList.querySelector('.bug-card')) {
+    renderCurrentTab();
+    return;
+  }
+
+  // 获取当前 DOM 中已有的卡片 id 集合
+  const existingIds = new Set(
+    Array.from(elBugList.querySelectorAll('.bug-card')).map((c) => Number(c.dataset.id))
+  );
+  const newIds = new Set(bugs.map((b) => b.id));
+
+  // 1. 移除已不在列表中的卡片（状态变化导致不再属于本页签），展开中的卡片不强制移除
+  existingIds.forEach((id) => {
+    if (!newIds.has(id)) {
+      const card = elBugList.querySelector(`.bug-card[data-id="${id}"]`);
+      if (card && !card.classList.contains('expanded')) {
+        card.remove();
+      }
+    }
+  });
+
+  // 2. 更新已有卡片的状态标签（仅更新 status badge，不动其他 DOM）
+  bugs.forEach((bug) => {
+    const card = elBugList.querySelector(`.bug-card[data-id="${bug.id}"]`);
+    if (card) {
+      const badge = card.querySelector('.status-badge');
+      if (badge) {
+        const newLabel = statusLabel(bug.status);
+        const newClass = `status-badge status-${bug.status}`;
+        if (badge.textContent !== newLabel || badge.className !== newClass) {
+          badge.textContent = newLabel;
+          badge.className = newClass;
+        }
+      }
+      // 未读状态同步
+      if (!state.readIds.has(bug.id)) {
+        card.classList.add('unread');
+      }
+    }
+  });
+
+  // 3. 追加新增的卡片（新提交的 bug）
+  bugs.forEach((bug, index) => {
+    if (!existingIds.has(bug.id)) {
+      elBugList.appendChild(buildCard(bug, index + 1));
+    }
   });
 }
 

@@ -118,6 +118,7 @@ async function startScreenshot() {
       // IMPORTANT: Do NOT use kiosk/fullscreen on macOS, it will lock the screen
       fullscreen: false,
       hasShadow: false,
+      enableLargerThanScreen: true,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -125,8 +126,13 @@ async function startScreenshot() {
       },
     });
 
-    // Set window level to cover screen (safe alternative to kiosk)
+    // 在 macOS 上使用 screen-saver 层级，可覆盖菜单栏和 Dock
+    if (process.platform === 'darwin') {
+      screenshotWindow.setAlwaysOnTop(true, 'screen-saver');
+    }
     screenshotWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // 设置完层级后再精确定位到全屏（含菜单栏），y:0 确保从最顶部开始
+    screenshotWindow.setBounds({ x: 0, y: 0, width, height });
     screenshotWindow.show();
 
     const htmlPath = path.join(__dirname, '../renderer/index.html');
