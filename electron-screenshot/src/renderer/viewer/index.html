@@ -78,6 +78,18 @@
     <div id="listHint" class="hint-text">请选择用户以加载 BUG 列表</div>
   </div>
 
+  <!-- 内联操作区浮层：吸附在列表底部，操作区滚出视口时显示 -->
+  <div id="inlineActionBar" class="inline-action-bar hidden">
+    <div class="inline-action-bar-inner">
+      <div class="detail-section-title">变更状态</div>
+      <div class="status-row">
+        <select class="status-select" id="floatStatusSelect"></select>
+        <button class="btn-confirm" id="floatBtnConfirm">确认</button>
+      </div>
+      <div class="status-msg" id="floatStatusMsg"></div>
+    </div>
+  </div>
+
   <!-- 详情面板（从底部滑入，覆盖列表） -->
   <div id="detailPanel">
     <div id="detailHeader">

@@ -39,6 +39,15 @@ const elBtnPin        = $('btnPin');
 const elBtnFilter     = $('btnFilter');
 const elFilterDrawer  = $('filterDrawer');
 const elBtnDetailBack = $('btnDetailBack');
+const elInlineActionBar   = $('inlineActionBar');
+const elFloatStatusSelect = $('floatStatusSelect');
+const elFloatBtnConfirm   = $('floatBtnConfirm');
+const elFloatStatusMsg    = $('floatStatusMsg');
+
+// ── 内联操作浮层状态 ──────────────────────────────────────────────────────
+let floatActionObserver = null;   // IntersectionObserver 实例
+let floatActionBugId    = null;   // 当前浮层绑定的 bug id
+let floatActionHandler  = null;   // 当前确认按钮的事件处理函数
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 function statusLabel(s) {
@@ -236,12 +245,13 @@ function renderCurrentTab() {
   }
 
   elBugList.innerHTML = '';
-  bugs.forEach((bug) => {
-    elBugList.appendChild(buildCard(bug));
+  hideInlineActionBar();
+  bugs.forEach((bug, index) => {
+    elBugList.appendChild(buildCard(bug, index + 1));
   });
 }
 
-function buildCard(bug) {
+function buildCard(bug, index) {
   const card = document.createElement('div');
   card.className = 'bug-card';
   card.dataset.id = bug.id;
@@ -259,7 +269,9 @@ function buildCard(bug) {
 
   card.innerHTML = `
     <div class="card-top">
-      <div class="card-title">#${bug.id} ${escHtml(bug.title)}</div>
+      <div class="card-title">
+        <span class="card-index">${index}</span>#${bug.id} ${escHtml(bug.title)}
+      </div>
       <span class="status-badge status-${bug.status}">${statusLabel(bug.status)}</span>
     </div>
     ${desc}
@@ -269,10 +281,310 @@ function buildCard(bug) {
       <span>${priorityLabel(bug.priority)}</span>
       <span>${formatDate(bug.created_at)}</span>
     </div>
+    <div class="card-inline-detail"></div>
   `;
 
-  card.addEventListener('click', () => openDetail(bug.id));
+  card.addEventListener('click', (e) => {
+    // 忽略内联详情区域内的点击冒泡（select、button 等）
+    if (e.target.closest('.card-inline-detail') && e.target !== card.querySelector('.card-inline-detail')) return;
+    toggleInlineDetail(card, bug.id);
+  });
   return card;
+}
+
+// ── 内联详情展开/收起 ─────────────────────────────────────────────────────
+async function toggleInlineDetail(card, bugId) {
+  const detailEl = card.querySelector('.card-inline-detail');
+  const isExpanded = card.classList.contains('expanded');
+
+  // 收起其他已展开的卡片
+  elBugList.querySelectorAll('.bug-card.expanded').forEach((c) => {
+    if (c !== card) {
+      c.classList.remove('expanded');
+      c.querySelector('.card-inline-detail').innerHTML = '';
+    }
+  });
+
+  // 每次切换都先隐藏浮层、断开 observer
+  hideInlineActionBar();
+
+  if (isExpanded) {
+    card.classList.remove('expanded');
+    detailEl.innerHTML = '';
+    return;
+  }
+
+  card.classList.add('expanded');
+  markRead(bugId);
+  detailEl.innerHTML = '<div class="card-inline-detail-inner"><div class="inline-loading">加载中...</div></div>';
+
+  try {
+    const res = await window.bugViewerAPI.getBug(bugId);
+    if (res.code !== 0 || !res.data) {
+      detailEl.innerHTML = '<div class="card-inline-detail-inner"><div class="inline-loading">获取详情失败</div></div>';
+      return;
+    }
+    renderInlineDetail(detailEl, res.data);
+  } catch (e) {
+    console.error('[Viewer] toggleInlineDetail error', e);
+    detailEl.innerHTML = '<div class="card-inline-detail-inner"><div class="inline-loading">获取详情失败</div></div>';
+  }
+}
+
+function renderInlineDetail(container, bug) {
+  const screenshots = bug.screenshots || [];
+  const thumbsHtml = screenshots.map((s) =>
+    `<img class="detail-screenshot" src="${escHtml(screenshotUrl(s.file_path))}" alt="截图" data-src="${escHtml(screenshotUrl(s.file_path))}">`
+  ).join('');
+
+  const reporter = bug.reporter ? (bug.reporter.username || bug.reporter.name || `#${bug.reporter_id}`) : (bug.reporter_id || '-');
+  const assignee = bug.assignee ? (bug.assignee.username || bug.assignee.name || `#${bug.assignee_id}`) : (bug.assignee_id ? `#${bug.assignee_id}` : '未分配');
+
+  const fields = [
+    { label: '类型', value: bugTypeLabel(bug.bug_type) },
+    { label: '优先级', value: priorityLabel(bug.priority) },
+    { label: '提报人', value: reporter },
+    { label: '接收人', value: assignee },
+    bug.inspection_task_id ? { label: '走查项目', value: `#${bug.inspection_task_id}` } : null,
+    bug.module_id ? { label: '功能模块', value: `#${bug.module_id}` } : null,
+    { label: '创建时间', value: formatDate(bug.created_at) },
+  ].filter(Boolean);
+
+  const fieldsHtml = fields.map((f) =>
+    `<div class="detail-field"><span class="detail-field-label">${escHtml(f.label)}</span><span class="detail-field-value">${escHtml(String(f.value))}</span></div>`
+  ).join('');
+
+  const descHtml = bug.description
+    ? `<div class="detail-section-title">描述</div><div class="detail-desc">${escHtml(bug.description)}</div>`
+    : '';
+
+  const stepsHtml = bug.reproduction_steps
+    ? `<div class="detail-section-title">复现步骤</div><div class="detail-steps">${escHtml(bug.reproduction_steps)}</div>`
+    : '';
+
+  container.innerHTML = `
+    <div class="card-inline-detail-inner">
+      <div class="inline-detail-body">
+        ${thumbsHtml}
+        ${descHtml}
+        ${stepsHtml}
+        <div class="detail-fields">${fieldsHtml}</div>
+        <div class="status-changer-sentinel"></div>
+      </div>
+    </div>
+  `;
+
+  container.querySelectorAll('.detail-screenshot').forEach((img) => {
+    img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showImgOverlay(img.dataset.src);
+    });
+  });
+
+  // 绑定浮层到当前 bug，并用 observer 监测哨兵可见性
+  const sentinel = container.querySelector('.status-changer-sentinel');
+  bindInlineActionBar(bug, sentinel);
+}
+
+// ── 内联操作浮层控制 ──────────────────────────────────────────────────────
+function bindInlineActionBar(bug, sentinel) {
+  // 断开旧的 observer
+  if (floatActionObserver) {
+    floatActionObserver.disconnect();
+    floatActionObserver = null;
+  }
+
+  // 移除旧的确认按钮事件
+  if (floatActionHandler) {
+    elFloatBtnConfirm.removeEventListener('click', floatActionHandler);
+    floatActionHandler = null;
+  }
+
+  floatActionBugId = bug.id;
+
+  // 把哨兵变成内嵌操作区（始终存在于卡片内，滚到底部时可见）
+  sentinel.className = 'status-changer';
+  sentinel.innerHTML = `
+    <div class="detail-section-title">变更状态</div>
+    <div class="status-row">
+      <select class="status-select" id="inlineStatusSelect-${bug.id}">
+        <option value="new"${bug.status === 'new' ? ' selected' : ''}>新建</option>
+        <option value="in_progress"${bug.status === 'in_progress' ? ' selected' : ''}>处理中</option>
+        <option value="fixed"${bug.status === 'fixed' ? ' selected' : ''}>已修复</option>
+        <option value="closed"${bug.status === 'closed' ? ' selected' : ''}>已关闭</option>
+      </select>
+      <button class="btn-confirm" id="inlineBtnConfirm-${bug.id}">确认</button>
+    </div>
+    <div class="status-msg" id="inlineStatusMsg-${bug.id}"></div>
+  `;
+
+  // 阻止内嵌操作区的点击冒泡到卡片
+  sentinel.addEventListener('click', (e) => e.stopPropagation());
+
+  // 同步浮层 select
+  elFloatStatusSelect.innerHTML = `
+    <option value="new"${bug.status === 'new' ? ' selected' : ''}>新建</option>
+    <option value="in_progress"${bug.status === 'in_progress' ? ' selected' : ''}>处理中</option>
+    <option value="fixed"${bug.status === 'fixed' ? ' selected' : ''}>已修复</option>
+    <option value="closed"${bug.status === 'closed' ? ' selected' : ''}>已关闭</option>
+  `;
+  elFloatStatusMsg.textContent = '';
+  elFloatStatusMsg.className = 'status-msg';
+
+  // 通用状态提交逻辑
+  async function submitStatus(newStatus, msgEl, selectEl, confirmBtn) {
+    if (newStatus === bug.status) {
+      msgEl.textContent = '状态未变更';
+      msgEl.className = 'status-msg';
+      return;
+    }
+    confirmBtn.disabled = true;
+    msgEl.textContent = '保存中...';
+    msgEl.className = 'status-msg';
+    try {
+      const res = await window.bugViewerAPI.updateBugStatus(bug.id, newStatus);
+      if (res.code === 0) {
+        msgEl.textContent = '状态已更新';
+        msgEl.className = 'status-msg';
+        const idx = state.bugs.findIndex((b) => b.id === bug.id);
+        if (idx !== -1) state.bugs[idx].status = newStatus;
+        bug.status = newStatus;
+        // 同步两处 select 的值
+        elFloatStatusSelect.value = newStatus;
+        const inlineSel = document.getElementById(`inlineStatusSelect-${bug.id}`);
+        if (inlineSel) inlineSel.value = newStatus;
+        // 同步两处 msg
+        elFloatStatusMsg.textContent = '状态已更新';
+        // 更新卡片状态标签
+        const card = elBugList.querySelector(`.bug-card[data-id="${bug.id}"]`);
+        if (card) {
+          const badge = card.querySelector('.status-badge');
+          if (badge) {
+            badge.textContent = statusLabel(newStatus);
+            badge.className = `status-badge status-${newStatus}`;
+          }
+        }
+        setTimeout(() => {
+          updateTabBadges();
+          const tabStatuses = TABS[state.activeTab].statuses;
+          if (!tabStatuses.includes(newStatus)) {
+            hideInlineActionBar();
+            renderCurrentTab();
+          }
+        }, 600);
+      } else {
+        msgEl.textContent = res.message || '更新失败';
+        msgEl.className = 'status-msg error';
+      }
+    } catch (err) {
+      msgEl.textContent = '网络错误';
+      msgEl.className = 'status-msg error';
+    } finally {
+      confirmBtn.disabled = false;
+    }
+  }
+
+  // 内嵌操作区事件
+  const inlineBtnConfirm = document.getElementById(`inlineBtnConfirm-${bug.id}`);
+  const inlineStatusSelect = document.getElementById(`inlineStatusSelect-${bug.id}`);
+  const inlineStatusMsg = document.getElementById(`inlineStatusMsg-${bug.id}`);
+  if (inlineBtnConfirm) {
+    inlineBtnConfirm.addEventListener('click', (e) => {
+      e.stopPropagation();
+      submitStatus(inlineStatusSelect.value, inlineStatusMsg, inlineStatusSelect, inlineBtnConfirm);
+    });
+  }
+
+  // 浮层确认按钮事件
+  floatActionHandler = (e) => {
+    e.stopPropagation();
+    submitStatus(elFloatStatusSelect.value, elFloatStatusMsg, elFloatStatusSelect, elFloatBtnConfirm);
+  };
+  elFloatBtnConfirm.addEventListener('click', floatActionHandler);
+
+  // 获取展开卡片中"内联详情区"的引用，用于计算上边界约束
+  // 约束边界 = .card-inline-detail 的顶部（卡片标题区和展开内容区之间的分割线）
+  const expandedCard = sentinel.closest('.bug-card');
+  const inlineDetailEl = expandedCard ? expandedCard.querySelector('.card-inline-detail') : null;
+  const FLOAT_BOTTOM_DEFAULT = 10; // px，正常吸底距窗口底部的距离
+
+  // 获取浮层真实高度（display:none 时 offsetHeight 为 0，需临时显示再测量）
+  let FLOAT_HEIGHT = 100; // fallback
+  {
+    const wasHidden = elInlineActionBar.classList.contains('hidden');
+    elInlineActionBar.classList.remove('hidden');
+    elInlineActionBar.style.visibility = 'hidden';
+    const h = elInlineActionBar.offsetHeight;
+    if (h > 0) FLOAT_HEIGHT = h;
+    if (wasHidden) elInlineActionBar.classList.add('hidden');
+    elInlineActionBar.style.visibility = '';
+  }
+
+  function updateFloatBar() {
+    const sentinelRect = sentinel.getBoundingClientRect();
+    const listRect = elBugList.getBoundingClientRect();
+
+    // 内嵌区完全在列表视口内 → 隐藏浮层
+    const fullyVisible = sentinelRect.top >= listRect.top && sentinelRect.bottom <= listRect.bottom;
+    // 内嵌区在列表视口下方（还没滚到）→ 应吸底
+    const isBelow = sentinelRect.bottom > listRect.bottom;
+
+    if (fullyVisible) {
+      elInlineActionBar.classList.add('hidden');
+      sentinel.style.visibility = '';
+    } else if (isBelow) {
+      elInlineActionBar.classList.remove('hidden');
+      sentinel.style.visibility = 'hidden';
+
+      // 上边界约束：以 .card-inline-detail 顶部为边界线
+      // 当展开内容区顶部滚近/滚出窗口底部时，浮层跟随其一起移出屏幕
+      const boundaryRect = inlineDetailEl ? inlineDetailEl.getBoundingClientRect() : null;
+      if (boundaryRect) {
+        const windowHeight = window.innerHeight;
+        // 展开内容区顶部距窗口底部的剩余空间
+        // 正值 = 边界线仍在窗口内；≤0 = 边界线已滚出窗口底部
+        const spaceAbove = windowHeight - boundaryRect.top;
+        if (spaceAbove <= FLOAT_HEIGHT + FLOAT_BOTTOM_DEFAULT) {
+          // 边界线快贴近/已过窗口底部，浮层跟随边界线往下推
+          const newBottom = spaceAbove - FLOAT_HEIGHT;
+          elInlineActionBar.style.bottom = `${Math.max(newBottom, -FLOAT_HEIGHT)}px`;
+        } else {
+          elInlineActionBar.style.bottom = `${FLOAT_BOTTOM_DEFAULT}px`;
+        }
+      }
+    } else {
+      // 内嵌区已滚过视口上方
+      elInlineActionBar.classList.add('hidden');
+      sentinel.style.visibility = '';
+    }
+  }
+
+  // 延迟执行初次判断，等待 grid 展开动画（0.3s）完成后 sentinel 位置才准确
+  // 动画期间先保持浮层隐藏，避免闪烁
+  setTimeout(updateFloatBar, 350);
+
+  // 监听 #bugList 滚动
+  floatActionObserver = { disconnect: () => elBugList.removeEventListener('scroll', updateFloatBar) };
+  elBugList.addEventListener('scroll', updateFloatBar);
+  floatActionObserver.observe = () => {};
+}
+
+function hideInlineActionBar() {
+  elInlineActionBar.classList.add('hidden');
+  elInlineActionBar.style.bottom = '';
+  // 恢复当前展开卡片内嵌操作区的可见性
+  elBugList.querySelectorAll('.bug-card.expanded .status-changer').forEach((el) => {
+    el.style.visibility = '';
+  });
+  if (floatActionObserver) {
+    floatActionObserver.disconnect();
+    floatActionObserver = null;
+  }
+  if (floatActionHandler) {
+    elFloatBtnConfirm.removeEventListener('click', floatActionHandler);
+    floatActionHandler = null;
+  }
+  floatActionBugId = null;
 }
 
 // ── 详情面板 ──────────────────────────────────────────────────────────────
@@ -497,8 +809,9 @@ function switchTab(tabKey) {
     btn.classList.toggle('active', btn.dataset.tab === tabKey);
   });
 
-  // Close detail panel when switching tabs
+  // Close detail panel and inline action bar when switching tabs
   closeDetail();
+  hideInlineActionBar();
   renderCurrentTab();
 }
 

@@ -1,7 +1,7 @@
 # BUG录入与走查管理工具 — 项目全局文档
 
 > 供 AI 助手、新会话、或协作开发者快速理解整个系统，可直接作为上下文输入。
-> 最后更新：2026-05-20
+> 最后更新：2026-05-20（吸底操作栏功能完成）
 
 ---
 
@@ -297,8 +297,23 @@ app.on('before-quit', () => {
 - 尺寸：`480×600`，无边框（`frame: false`），常置顶（`alwaysOnTop: true`）
 - 功能：三个页签（待处理/待验收/已关闭） + 用户选择器 + 筛选抽屉
 - 筛选维度：优先级 chips、类型 chips、关键词搜索
-- 样式：暗色主题（Catppuccin Mocha 配色），`viewer.css`
+- 样式：**浅色主题**（黑白灰系），`viewer.css`
 - 截图时临时取消置顶（避免遮挡截图），截图完成后恢复
+
+#### 卡片展开 & 吸底操作栏
+
+点击卡片展开内联详情，底部有「变更状态」操作区，实现**吸底**逻辑：
+
+- 操作区滚出视口下方时，`#inlineActionBar`（`position: fixed`）自动浮现在窗口底部
+- 操作区完全可见时，浮层隐藏，内嵌操作区正常显示
+- **上边界约束**：以 `.card-inline-detail` 顶部（卡片标题区与展开内容区的分割线）为边界；当展开卡片向下滚出窗口时，浮层跟随该分割线一起滑出屏幕底部，不会悬浮在其他卡片上
+- 展开动画（CSS Grid `0fr→1fr`，0.3s）期间延迟 350ms 再初次判断，避免 sentinel 位置不准
+- 浮层高度通过临时 `display:block; visibility:hidden` 量取真实值，不依赖 fallback
+
+关键实现文件：
+- `viewer/index.html` — `#inlineActionBar` 浮层 HTML
+- `viewer/viewer.css` — `.card-inline-detail` grid 展开动画、`.inline-action-bar` fixed 样式
+- `viewer/viewer.js` — `bindInlineActionBar()` / `updateFloatBar()` / `hideInlineActionBar()`
 
 ### 截图标注工具
 
