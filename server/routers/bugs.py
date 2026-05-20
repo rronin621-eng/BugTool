@@ -5,10 +5,11 @@ from database import get_db
 from services.bug_service import (
     get_bugs, get_bug, get_bug_detail, create_bug,
     update_bug, update_bug_status, delete_bug,
+    transfer_bug, update_collaborators,
 )
 from schemas import (
     BugCreate, BugUpdate, BugStatusUpdate, BugResponse,
-    BugDetailResponse, ApiResponse,
+    BugDetailResponse, ApiResponse, BugTransferRequest, BugCollaboratorUpdate,
 )
 
 router = APIRouter(prefix="/bugs", tags=["bugs"])
@@ -73,10 +74,33 @@ async def update_bug_status_api(
     bug = await get_bug(db, bug_id)
     if not bug:
         return ApiResponse(code=1, message="BUG不存在")
-    # Use reporter_id as default operator if not provided
-    operator_id = status_data.comment and bug.reporter_id or bug.reporter_id
+    operator_id = status_data.operator_id or bug.reporter_id
     bug = await update_bug_status(db, bug, status_data, operator_id)
     return ApiResponse(data=BugResponse.model_validate(bug).model_dump())
+
+
+@router.put("/{bug_id}/transfer", response_model=ApiResponse)
+async def transfer_bug_api(
+    bug_id: int, req: BugTransferRequest, db: AsyncSession = Depends(get_db)
+):
+    bug = await get_bug(db, bug_id)
+    if not bug:
+        return ApiResponse(code=1, message="BUG不存在")
+    operator_id = req.operator_id or bug.reporter_id
+    bug = await transfer_bug(db, bug, req.assignee_id, operator_id, req.comment)
+    return ApiResponse(data=BugResponse.model_validate(bug).model_dump())
+
+
+@router.put("/{bug_id}/collaborators", response_model=ApiResponse)
+async def update_collaborators_api(
+    bug_id: int, req: BugCollaboratorUpdate, db: AsyncSession = Depends(get_db)
+):
+    bug = await get_bug(db, bug_id)
+    if not bug:
+        return ApiResponse(code=1, message="BUG不存在")
+    await update_collaborators(db, bug_id, req.user_ids)
+    detail = await get_bug_detail(db, bug_id)
+    return ApiResponse(data=detail)
 
 
 @router.delete("/{bug_id}", response_model=ApiResponse)

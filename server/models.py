@@ -39,7 +39,7 @@ class Bug(Base):
     title = Column(String(200), nullable=False)
     description = Column(Text, default="")
     bug_type = Column(String(20), nullable=False)  # ui / functional / performance / security / other
-    status = Column(String(20), default="new")  # new / in_progress / fixed / closed
+    status = Column(String(20), default="in_progress")  # in_progress / fixed / closed / deferred
     priority = Column(String(20), default="medium")  # low / medium / high / critical
     reporter_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -59,6 +59,15 @@ class Screenshot(Base):
     file_path = Column(String(500), nullable=False)
     file_name = Column(String(200), nullable=False)
     file_size = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class BugCollaborator(Base):
+    __tablename__ = "bug_collaborators"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    bug_id = Column(Integer, ForeignKey("bugs.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
 

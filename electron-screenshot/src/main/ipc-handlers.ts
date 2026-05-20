@@ -19,6 +19,9 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   ipcMain.removeHandler('bugs:list');
   ipcMain.removeHandler('bug:get');
   ipcMain.removeHandler('bug:update-status');
+  ipcMain.removeHandler('bug:transfer');
+  ipcMain.removeHandler('bug:update-collaborators');
+  ipcMain.removeHandler('bug:accept');
   ipcMain.removeHandler('image:preview');
 
   // Close screenshot window (use destroy for reliable cleanup)
@@ -191,9 +194,46 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   });
 
   // Update bug status (for viewer)
-  ipcMain.handle('bug:update-status', async (_event, bugId: number, status: string, comment?: string) => {
+  ipcMain.handle('bug:update-status', async (_event, bugId: number, status: string, comment?: string, operatorId?: number) => {
     try {
-      return await httpRequest('PUT', `${apiBase}/bugs/${bugId}/status`, { status, comment });
+      return await httpRequest('PUT', `${apiBase}/bugs/${bugId}/status`, { status, comment, operator_id: operatorId });
+    } catch (err: any) {
+      return { code: 1, message: err.message, data: null };
+    }
+  });
+
+  // Transfer bug to another assignee
+  ipcMain.handle('bug:transfer', async (_event, bugId: number, assigneeId: number, operatorId?: number, comment?: string) => {
+    try {
+      return await httpRequest('PUT', `${apiBase}/bugs/${bugId}/transfer`, {
+        assignee_id: assigneeId,
+        operator_id: operatorId,
+        comment: comment || '',
+      });
+    } catch (err: any) {
+      return { code: 1, message: err.message, data: null };
+    }
+  });
+
+  // Update bug collaborators
+  ipcMain.handle('bug:update-collaborators', async (_event, bugId: number, userIds: number[]) => {
+    try {
+      return await httpRequest('PUT', `${apiBase}/bugs/${bugId}/collaborators`, { user_ids: userIds });
+    } catch (err: any) {
+      return { code: 1, message: err.message, data: null };
+    }
+  });
+
+  // Accept or reject bug (reporter verifies fixed bug)
+  ipcMain.handle('bug:accept', async (_event, bugId: number, accepted: boolean, operatorId?: number, comment?: string) => {
+    try {
+      const status = accepted ? 'closed' : 'in_progress';
+      const note = comment || (accepted ? '验收通过' : '验收不通过，重新处理');
+      return await httpRequest('PUT', `${apiBase}/bugs/${bugId}/status`, {
+        status,
+        comment: note,
+        operator_id: operatorId,
+      });
     } catch (err: any) {
       return { code: 1, message: err.message, data: null };
     }

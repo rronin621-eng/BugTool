@@ -137,8 +137,9 @@
                   <el-option v-for="s in BUG_STATUSES" :key="s.value" :label="s.label" :value="s.value" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="备注（可选）">
-                <el-input v-model="statusComment" type="textarea" :rows="3" placeholder="说明变更原因..." />
+              <el-form-item :label="newStatus === 'deferred' ? '暂不处理理由（必填）' : '备注（可选）'">
+                <el-input v-model="statusComment" type="textarea" :rows="3"
+                  :placeholder="newStatus === 'deferred' ? '请说明暂不处理的原因...' : '说明变更原因...'" />
               </el-form-item>
               <el-button type="primary" style="width: 100%" :loading="submitting" @click="handleStatusChange">
                 确认更新
@@ -234,6 +235,10 @@ async function loadBug() {
 
 async function handleStatusChange() {
   if (!bug.value || !newStatus.value) return
+  if (newStatus.value === 'deferred' && !statusComment.value.trim()) {
+    ElMessage.warning('变更为「暂不处理」时，理由为必填项')
+    return
+  }
   submitting.value = true
   try {
     await updateBugStatus(bug.value.id, {

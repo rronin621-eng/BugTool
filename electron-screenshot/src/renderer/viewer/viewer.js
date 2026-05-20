@@ -4,10 +4,41 @@ const API_BASE = 'http://127.0.0.1:8000';
 
 // ── 页签定义 ──────────────────────────────────────────────────────────────
 const TABS = {
-  pending: { label: '待处理', statuses: ['new', 'in_progress'] },
-  review:  { label: '待验收', statuses: ['fixed'] },
-  closed:  { label: '已关闭', statuses: ['closed'] },
+  // 待处理：我负责的 in_progress/deferred + 我提报且 fixed（待我验收）
+  pending: { label: '待处理', statuses: ['in_progress', 'deferred', 'fixed'], role: 'mixed' },
+  // 待验收：我修复的（我是 assignee）且 fixed，等提报人验收
+  review:  { label: '待验收', statuses: ['fixed'], role: 'assignee' },
+  closed:  { label: '已关闭', statuses: ['closed'], role: 'any' },
 };
+
+/**
+ * 根据页签规则过滤 bug 列表
+ * pending : assignee=我 且 status in [in_progress, deferred]
+ *           OR reporter=我 且 status=fixed（别人修的等我验收）
+ * review  : assignee=我 且 status=fixed（我修的等别人验收）
+ * closed  : assignee=我 OR reporter=我 且 status=closed
+ */
+function getBugsForTab(tabKey) {
+  const uid = state.currentUserId;
+  return state.bugs.filter((b) => {
+    const iAm = { assignee: b.assignee_id === uid, reporter: b.reporter_id === uid };
+    if (tabKey === 'pending') {
+      // 我负责 & 处理中/暂不处理
+      if (iAm.assignee && (b.status === 'in_progress' || b.status === 'deferred')) return true;
+      // 我提报 & fixed → 待我验收，归入待处理
+      if (iAm.reporter && b.status === 'fixed') return true;
+      return false;
+    }
+    if (tabKey === 'review') {
+      // 我修复（我是 assignee）& fixed，等提报人验收
+      return iAm.assignee && b.status === 'fixed';
+    }
+    if (tabKey === 'closed') {
+      return (iAm.assignee || iAm.reporter) && b.status === 'closed';
+    }
+    return false;
+  });
+}
 
 // ── 状态 ──────────────────────────────────────────────────────────────────
 const state = {
@@ -40,18 +71,25 @@ const elBtnFilter     = $('btnFilter');
 const elFilterDrawer  = $('filterDrawer');
 const elBtnDetailBack = $('btnDetailBack');
 const elInlineActionBar   = $('inlineActionBar');
-const elFloatStatusSelect = $('floatStatusSelect');
-const elFloatBtnConfirm   = $('floatBtnConfirm');
-const elFloatStatusMsg    = $('floatStatusMsg');
+const elFloatNormalActions = $('floatNormalActions');
+const elFloatAcceptActions = $('floatAcceptActions');
+const elFloatBtnStatusDrop = $('floatBtnStatusDrop');
+const elFloatStatusLabel   = $('floatStatusLabel');
+const elFloatStatusMenu    = $('floatStatusMenu');
+const elFloatBtnTransfer   = $('floatBtnTransfer');
+const elFloatStatusMsg     = $('floatStatusMsg');
+const elFloatBtnAcceptPass = $('floatBtnAcceptPass');
+const elFloatBtnAcceptFail = $('floatBtnAcceptFail');
+const elFloatAcceptMsg     = $('floatAcceptMsg');
 
 // ── 内联操作浮层状态 ──────────────────────────────────────────────────────
 let floatActionObserver = null;   // IntersectionObserver 实例
 let floatActionBugId    = null;   // 当前浮层绑定的 bug id
-let floatActionHandler  = null;   // 当前确认按钮的事件处理函数
+let floatActionBug      = null;   // 当前浮层绑定的 bug 对象
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
 function statusLabel(s) {
-  const map = { new: '新建', in_progress: '处理中', fixed: '已修复', closed: '已关闭' };
+  const map = { in_progress: '处理中', fixed: '已修复', deferred: '暂不处理', closed: '已关闭' };
   return map[s] || s;
 }
 
@@ -92,6 +130,16 @@ function mergeAndDedup(arr1, arr2) {
   const map = new Map();
   [...arr1, ...arr2].forEach((b) => map.set(b.id, b));
   return Array.from(map.values());
+}
+
+// 判断当前用户是否是该 bug 的提报人
+function isReporter(bug) {
+  return bug && state.currentUserId && bug.reporter_id === state.currentUserId;
+}
+
+// 判断状态变更后 bug 是否仍属于当前页签（用于决定是否关闭卡片/详情）
+function bugBelongsToCurrentTab(bug) {
+  return getBugsForTab(state.activeTab).some((b) => b.id === bug.id);
 }
 
 // ── 持久化偏好 ────────────────────────────────────────────────────────────
@@ -159,7 +207,7 @@ function populateUserSelect() {
   state.users.forEach((u) => {
     const opt = document.createElement('option');
     opt.value = u.id;
-    opt.textContent = u.username || u.name || `用户${u.id}`;
+    opt.textContent = u.display_name || u.username || `用户${u.id}`;
     elUserSelect.appendChild(opt);
   });
   if (state.currentUserId) {
@@ -204,8 +252,7 @@ async function loadBugs(silent = false) {
 // ── 页签徽章 ──────────────────────────────────────────────────────────────
 function updateTabBadges() {
   Object.keys(TABS).forEach((tabKey) => {
-    const statuses = TABS[tabKey].statuses;
-    const bugs = state.bugs.filter((b) => statuses.includes(b.status));
+    const bugs = getBugsForTab(tabKey);
     const unreadCount = bugs.filter((b) => !state.readIds.has(b.id)).length;
     const badge = $(`badge-${tabKey}`);
     if (badge) {
@@ -216,12 +263,10 @@ function updateTabBadges() {
 
 // ── 渲染当前页签 ───────────────────────────────────────────────────────────
 function renderCurrentTab() {
-  const statuses = TABS[state.activeTab].statuses;
-  const statusOrder = { new: 0, in_progress: 1, fixed: 2, closed: 3 };
+  const statusOrder = { in_progress: 0, deferred: 1, fixed: 2, closed: 3 };
   const { priority, bug_type, keyword } = state.activeFilter;
 
-  let bugs = state.bugs
-    .filter((b) => statuses.includes(b.status))
+  let bugs = getBugsForTab(state.activeTab)
     .filter((b) => !priority || b.priority === priority)
     .filter((b) => !bug_type || b.bug_type === bug_type)
     .filter((b) => !keyword || (b.title && b.title.includes(keyword)) || (b.description && b.description.includes(keyword)))
@@ -257,12 +302,10 @@ function renderCurrentTab() {
 
 // ── 静默 diff 更新（轮询刷新时使用，不重建 DOM，不打断用户操作）─────────────
 function patchCurrentTab() {
-  const statuses = TABS[state.activeTab].statuses;
-  const statusOrder = { new: 0, in_progress: 1, fixed: 2, closed: 3 };
+  const statusOrder = { in_progress: 0, deferred: 1, fixed: 2, closed: 3 };
   const { priority, bug_type, keyword } = state.activeFilter;
 
-  const bugs = state.bugs
-    .filter((b) => statuses.includes(b.status))
+  const bugs = getBugsForTab(state.activeTab)
     .filter((b) => !priority || b.priority === priority)
     .filter((b) => !bug_type || b.bug_type === bug_type)
     .filter((b) => !keyword || (b.title && b.title.includes(keyword)) || (b.description && b.description.includes(keyword)))
@@ -415,8 +458,11 @@ function renderInlineDetail(container, bug) {
     `<img class="detail-screenshot" src="${escHtml(screenshotUrl(s.file_path))}" alt="截图" data-src="${escHtml(screenshotUrl(s.file_path))}">`
   ).join('');
 
-  const reporter = bug.reporter ? (bug.reporter.username || bug.reporter.name || `#${bug.reporter_id}`) : (bug.reporter_id || '-');
-  const assignee = bug.assignee ? (bug.assignee.username || bug.assignee.name || `#${bug.assignee_id}`) : (bug.assignee_id ? `#${bug.assignee_id}` : '未分配');
+  const reporter = bug.reporter ? (bug.reporter.display_name || bug.reporter.username || `#${bug.reporter_id}`) : (bug.reporter_id || '-');
+  const assignee = bug.assignee ? (bug.assignee.display_name || bug.assignee.username || `#${bug.assignee_id}`) : (bug.assignee_id ? `#${bug.assignee_id}` : '未分配');
+
+  const collaborators = bug.collaborators || [];
+  const collabNames = collaborators.map((c) => c.display_name || c.username).join('、');
 
   const fields = [
     { label: '类型', value: bugTypeLabel(bug.bug_type) },
@@ -440,6 +486,31 @@ function renderInlineDetail(container, bug) {
     ? `<div class="detail-section-title">复现步骤</div><div class="detail-steps">${escHtml(bug.reproduction_steps)}</div>`
     : '';
 
+  // 协作人区域
+  const collabHtml = `
+    <div class="collaborators-section">
+      <div class="collab-header">
+        <span class="detail-section-title" style="margin:0">协作人</span>
+        <button class="btn-add-collab" data-bug-id="${bug.id}">+ 添加协作人</button>
+      </div>
+      <div class="collab-list" id="collabList-${bug.id}">
+        ${collabNames
+          ? collaborators.map((c) =>
+              `<span class="collab-tag" data-uid="${c.id}">${escHtml(c.display_name || c.username)}<button class="collab-remove" data-uid="${c.id}" title="移除">×</button></span>`
+            ).join('')
+          : '<span class="collab-empty">暂无协作人</span>'
+        }
+      </div>
+      <div class="collab-picker hidden" id="collabPicker-${bug.id}">
+        <div class="collab-picker-list" id="collabPickerList-${bug.id}"></div>
+        <div class="collab-picker-actions">
+          <button class="collab-picker-cancel btn-cancel-sm">取消</button>
+          <button class="collab-picker-confirm btn-confirm-sm">确认</button>
+        </div>
+      </div>
+    </div>
+  `;
+
   container.innerHTML = `
     <div class="card-inline-detail-inner">
       <div class="inline-detail-body">
@@ -447,6 +518,7 @@ function renderInlineDetail(container, bug) {
         ${descHtml}
         ${stepsHtml}
         <div class="detail-fields">${fieldsHtml}</div>
+        ${collabHtml}
         <div class="status-changer-sentinel"></div>
       </div>
     </div>
@@ -459,9 +531,124 @@ function renderInlineDetail(container, bug) {
     });
   });
 
+  // 协作人相关事件
+  bindCollaboratorUI(container, bug);
+
   // 绑定浮层到当前 bug，并用 observer 监测哨兵可见性
   const sentinel = container.querySelector('.status-changer-sentinel');
   bindInlineActionBar(bug, sentinel);
+}
+
+// ── 协作人 UI 绑定 ────────────────────────────────────────────────────────
+function bindCollaboratorUI(container, bug) {
+  let currentCollabIds = (bug.collaborators || []).map((c) => c.id);
+
+  const btnAddCollab = container.querySelector('.btn-add-collab');
+  const picker = container.querySelector(`#collabPicker-${bug.id}`);
+  const pickerList = container.querySelector(`#collabPickerList-${bug.id}`);
+  const btnCancel = picker && picker.querySelector('.collab-picker-cancel');
+  const btnConfirm = picker && picker.querySelector('.collab-picker-confirm');
+
+  if (!btnAddCollab || !picker) return;
+
+  btnAddCollab.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // 渲染候选人列表（排除当前接收人和提报人）
+    const excludeIds = new Set([bug.reporter_id, bug.assignee_id].filter(Boolean));
+    const candidates = state.users.filter((u) => !excludeIds.has(u.id));
+
+    pickerList.innerHTML = candidates.map((u) => {
+      const checked = currentCollabIds.includes(u.id) ? ' checked' : '';
+      const name = u.display_name || u.username;
+      return `<label class="collab-option"><input type="checkbox" value="${u.id}"${checked}><span>${escHtml(name)}</span></label>`;
+    }).join('');
+
+    picker.classList.toggle('hidden');
+    btnAddCollab.classList.toggle('active');
+  });
+
+  if (btnCancel) {
+    btnCancel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      picker.classList.add('hidden');
+      btnAddCollab.classList.remove('active');
+    });
+  }
+
+  if (btnConfirm) {
+    btnConfirm.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const checked = Array.from(pickerList.querySelectorAll('input[type=checkbox]:checked'))
+        .map((cb) => Number(cb.value));
+
+      picker.classList.add('hidden');
+      btnAddCollab.classList.remove('active');
+      btnConfirm.disabled = true;
+
+      try {
+        const res = await window.bugViewerAPI.updateCollaborators(bug.id, checked);
+        if (res.code === 0) {
+          currentCollabIds = checked;
+          const updatedCollabs = (res.data && res.data.collaborators) || [];
+          // 更新 bug 对象中的 collaborators
+          bug.collaborators = updatedCollabs;
+          // 重新渲染协作人标签
+          const collabListEl = container.querySelector(`#collabList-${bug.id}`);
+          if (collabListEl) {
+            if (updatedCollabs.length === 0) {
+              collabListEl.innerHTML = '<span class="collab-empty">暂无协作人</span>';
+            } else {
+              collabListEl.innerHTML = updatedCollabs.map((c) =>
+                `<span class="collab-tag" data-uid="${c.id}">${escHtml(c.display_name || c.username)}<button class="collab-remove" data-uid="${c.id}" title="移除">×</button></span>`
+              ).join('');
+              // 重新绑定移除按钮
+              collabListEl.querySelectorAll('.collab-remove').forEach((btn) => {
+                btn.addEventListener('click', async (ev) => {
+                  ev.stopPropagation();
+                  const uid = Number(btn.dataset.uid);
+                  const newIds = currentCollabIds.filter((id) => id !== uid);
+                  const r = await window.bugViewerAPI.updateCollaborators(bug.id, newIds);
+                  if (r.code === 0) {
+                    currentCollabIds = newIds;
+                    bug.collaborators = (r.data && r.data.collaborators) || [];
+                    btn.closest('.collab-tag').remove();
+                    if (currentCollabIds.length === 0) {
+                      collabListEl.innerHTML = '<span class="collab-empty">暂无协作人</span>';
+                    }
+                  }
+                });
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Viewer] updateCollaborators error', err);
+      } finally {
+        btnConfirm.disabled = false;
+      }
+    });
+  }
+
+  // 绑定现有协作人的移除按钮
+  const collabListEl = container.querySelector(`#collabList-${bug.id}`);
+  if (collabListEl) {
+    collabListEl.querySelectorAll('.collab-remove').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const uid = Number(btn.dataset.uid);
+        const newIds = currentCollabIds.filter((id) => id !== uid);
+        const r = await window.bugViewerAPI.updateCollaborators(bug.id, newIds);
+        if (r.code === 0) {
+          currentCollabIds = newIds;
+          bug.collaborators = (r.data && r.data.collaborators) || [];
+          btn.closest('.collab-tag').remove();
+          if (currentCollabIds.length === 0) {
+            collabListEl.innerHTML = '<span class="collab-empty">暂无协作人</span>';
+          }
+        }
+      });
+    });
+  }
 }
 
 // ── 内联操作浮层控制 ──────────────────────────────────────────────────────
@@ -472,122 +659,262 @@ function bindInlineActionBar(bug, sentinel) {
     floatActionObserver = null;
   }
 
-  // 移除旧的确认按钮事件
-  if (floatActionHandler) {
-    elFloatBtnConfirm.removeEventListener('click', floatActionHandler);
-    floatActionHandler = null;
-  }
-
   floatActionBugId = bug.id;
+  floatActionBug   = bug;
 
-  // 把哨兵变成内嵌操作区（始终存在于卡片内，滚到底部时可见）
+  // 决定展示模式：
+  // isReviewMode   = 我是提报人 & fixed → 显示验收通过/不通过
+  // isWaitingReview = 我是负责人 & fixed → 我修复了等待验收，只读
+  // 否则 → 普通状态变更 + 转交
+  const isReviewMode    = bug.status === 'fixed' && isReporter(bug) && bug.reporter_id !== bug.assignee_id;
+  const isWaitingReview = bug.status === 'fixed' && !isReporter(bug);
+
+  // 把哨兵变成内嵌操作区
   sentinel.className = 'status-changer';
-  sentinel.innerHTML = `
-    <div class="detail-section-title">变更状态</div>
-    <div class="status-row">
-      <select class="status-select" id="inlineStatusSelect-${bug.id}">
-        <option value="new"${bug.status === 'new' ? ' selected' : ''}>新建</option>
-        <option value="in_progress"${bug.status === 'in_progress' ? ' selected' : ''}>处理中</option>
-        <option value="fixed"${bug.status === 'fixed' ? ' selected' : ''}>已修复</option>
-        <option value="closed"${bug.status === 'closed' ? ' selected' : ''}>已关闭</option>
-      </select>
-      <button class="btn-confirm" id="inlineBtnConfirm-${bug.id}">确认</button>
-    </div>
-    <div class="status-msg" id="inlineStatusMsg-${bug.id}"></div>
-  `;
 
-  // 阻止内嵌操作区的点击冒泡到卡片
-  sentinel.addEventListener('click', (e) => e.stopPropagation());
+  if (isReviewMode) {
+    // 内嵌：验收操作区
+    sentinel.innerHTML = `
+      <div class="action-bar-row">
+        <span class="action-bar-label">验收</span>
+        <div class="action-bar-btns">
+          <button class="btn-accept-pass" id="inlineBtnAcceptPass-${bug.id}">通过</button>
+          <button class="btn-accept-fail" id="inlineBtnAcceptFail-${bug.id}">不通过</button>
+        </div>
+      </div>
+      <div class="status-msg" id="inlineAcceptMsg-${bug.id}"></div>
+    `;
 
-  // 同步浮层 select
-  elFloatStatusSelect.innerHTML = `
-    <option value="new"${bug.status === 'new' ? ' selected' : ''}>新建</option>
-    <option value="in_progress"${bug.status === 'in_progress' ? ' selected' : ''}>处理中</option>
-    <option value="fixed"${bug.status === 'fixed' ? ' selected' : ''}>已修复</option>
-    <option value="closed"${bug.status === 'closed' ? ' selected' : ''}>已关闭</option>
-  `;
-  elFloatStatusMsg.textContent = '';
-  elFloatStatusMsg.className = 'status-msg';
+    // 浮层也切换为验收模式
+    elFloatNormalActions.classList.add('hidden');
+    elFloatAcceptActions.classList.remove('hidden');
+    elFloatAcceptMsg.textContent = '';
+    elFloatAcceptMsg.className = 'status-msg';
 
-  // 通用状态提交逻辑
-  async function submitStatus(newStatus, msgEl, selectEl, confirmBtn) {
-    if (newStatus === bug.status) {
-      msgEl.textContent = '状态未变更';
-      msgEl.className = 'status-msg';
-      return;
-    }
-    confirmBtn.disabled = true;
-    msgEl.textContent = '保存中...';
-    msgEl.className = 'status-msg';
-    try {
-      const res = await window.bugViewerAPI.updateBugStatus(bug.id, newStatus);
-      if (res.code === 0) {
-        msgEl.textContent = '状态已更新';
-        msgEl.className = 'status-msg';
-        const idx = state.bugs.findIndex((b) => b.id === bug.id);
-        if (idx !== -1) state.bugs[idx].status = newStatus;
-        bug.status = newStatus;
-        // 同步两处 select 的值
-        elFloatStatusSelect.value = newStatus;
-        const inlineSel = document.getElementById(`inlineStatusSelect-${bug.id}`);
-        if (inlineSel) inlineSel.value = newStatus;
-        // 同步两处 msg
-        elFloatStatusMsg.textContent = '状态已更新';
-        // 更新卡片状态标签
-        const card = elBugList.querySelector(`.bug-card[data-id="${bug.id}"]`);
-        if (card) {
-          const badge = card.querySelector('.status-badge');
-          if (badge) {
-            badge.textContent = statusLabel(newStatus);
-            badge.className = `status-badge status-${newStatus}`;
+    // 内嵌验收事件
+    const inlinePass = document.getElementById(`inlineBtnAcceptPass-${bug.id}`);
+    const inlineFail = document.getElementById(`inlineBtnAcceptFail-${bug.id}`);
+    const inlineMsg  = document.getElementById(`inlineAcceptMsg-${bug.id}`);
+
+    const doAccept = async (accepted, btn, msgEl) => {
+      btn.disabled = true;
+      msgEl.textContent = '保存中...';
+      try {
+        const res = await window.bugViewerAPI.acceptBug(bug.id, accepted, state.currentUserId);
+        if (res.code === 0) {
+          msgEl.textContent = accepted ? '验收通过' : '已退回重新处理';
+          const newStatus = accepted ? 'closed' : 'in_progress';
+          const idx = state.bugs.findIndex((b) => b.id === bug.id);
+          if (idx !== -1) state.bugs[idx].status = newStatus;
+          bug.status = newStatus;
+          const card = elBugList.querySelector(`.bug-card[data-id="${bug.id}"]`);
+          if (card) {
+            const badge = card.querySelector('.status-badge');
+            if (badge) { badge.textContent = statusLabel(newStatus); badge.className = `status-badge status-${newStatus}`; }
           }
+          setTimeout(() => { updateTabBadges(); hideInlineActionBar(); renderCurrentTab(); }, 600);
+        } else {
+          msgEl.textContent = res.message || '操作失败';
+          msgEl.className = 'status-msg error';
         }
-        setTimeout(() => {
-          updateTabBadges();
-          const tabStatuses = TABS[state.activeTab].statuses;
-          if (!tabStatuses.includes(newStatus)) {
-            hideInlineActionBar();
-            renderCurrentTab();
+      } catch {
+        msgEl.textContent = '网络错误';
+        msgEl.className = 'status-msg error';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    if (inlinePass) inlinePass.addEventListener('click', (e) => { e.stopPropagation(); doAccept(true, inlinePass, inlineMsg); });
+    if (inlineFail) inlineFail.addEventListener('click', (e) => { e.stopPropagation(); doAccept(false, inlineFail, inlineMsg); });
+
+    // 浮层验收事件（重新绑，清旧handler）
+    const newPassHandler = () => doAccept(true, elFloatBtnAcceptPass, elFloatAcceptMsg);
+    const newFailHandler = () => doAccept(false, elFloatBtnAcceptFail, elFloatAcceptMsg);
+    elFloatBtnAcceptPass.replaceWith(elFloatBtnAcceptPass.cloneNode(true));
+    elFloatBtnAcceptFail.replaceWith(elFloatBtnAcceptFail.cloneNode(true));
+    $('floatBtnAcceptPass').addEventListener('click', newPassHandler);
+    $('floatBtnAcceptFail').addEventListener('click', newFailHandler);
+
+  } else if (isWaitingReview) {
+    // 内嵌：我修复了，等待提报人验收 → 只读提示
+    sentinel.innerHTML = `
+      <div class="action-bar-row waiting-review-hint">
+        <span class="waiting-review-label">等待提报人验收中…</span>
+      </div>
+    `;
+    // 浮层：隐藏两组操作，显示只读提示
+    elFloatNormalActions.classList.add('hidden');
+    elFloatAcceptActions.classList.add('hidden');
+    // 在浮层容器内插入只读提示（若还没有）
+    let floatHint = elInlineActionBar.querySelector('.waiting-review-float-hint');
+    if (!floatHint) {
+      floatHint = document.createElement('div');
+      floatHint.className = 'waiting-review-float-hint action-bar-row';
+      floatHint.innerHTML = '<span class="waiting-review-label">等待提报人验收中…</span>';
+      elInlineActionBar.querySelector('.inline-action-bar-inner').appendChild(floatHint);
+    }
+    floatHint.style.display = 'flex';
+
+    sentinel.addEventListener('click', (e) => e.stopPropagation());
+
+  } else {
+    // 内嵌：普通状态变更 + 转交
+    // 先确保只读提示不残留
+    const floatHint = elInlineActionBar.querySelector('.waiting-review-float-hint');
+    if (floatHint) floatHint.style.display = 'none';
+    sentinel.innerHTML = `
+      <div class="action-bar-row">
+        <div class="action-bar-btns">
+          <div class="dropdown-wrap">
+            <button class="btn-status-drop" id="inlineBtnStatusDrop-${bug.id}">
+              <span id="inlineStatusLabel-${bug.id}">更改状态</span>
+              <span class="drop-arrow">▾</span>
+            </button>
+            <div class="dropdown-menu hidden" id="inlineStatusMenu-${bug.id}"></div>
+          </div>
+          <button class="btn-transfer" id="inlineBtnTransfer-${bug.id}">转交</button>
+        </div>
+      </div>
+      <div class="status-msg" id="inlineStatusMsg-${bug.id}"></div>
+    `;
+
+    // 浮层切换为普通模式
+    elFloatNormalActions.classList.remove('hidden');
+    elFloatAcceptActions.classList.add('hidden');
+    elFloatStatusMsg.textContent = '';
+    elFloatStatusMsg.className = 'status-msg';
+    elFloatStatusLabel.textContent = '更改状态';
+
+    // 阻止内嵌操作区的点击冒泡到卡片
+    sentinel.addEventListener('click', (e) => e.stopPropagation());
+
+    // 通用状态提交逻辑
+    async function submitStatus(newStatus, msgEl, labelEl) {
+      if (newStatus === bug.status) {
+        msgEl.textContent = '状态未变更';
+        msgEl.className = 'status-msg';
+        return;
+      }
+      let comment = '';
+      if (newStatus === 'deferred') {
+        const reason = await promptDeferReason();
+        if (reason === null) return;
+        comment = reason;
+      }
+      msgEl.textContent = '保存中...';
+      msgEl.className = 'status-msg';
+      try {
+        const res = await window.bugViewerAPI.updateBugStatus(bug.id, newStatus, comment, state.currentUserId);
+        if (res.code === 0) {
+          msgEl.textContent = '状态已更新';
+          const idx = state.bugs.findIndex((b) => b.id === bug.id);
+          if (idx !== -1) state.bugs[idx].status = newStatus;
+          bug.status = newStatus;
+          if (labelEl) labelEl.textContent = '更改状态';
+          elFloatStatusLabel.textContent = '更改状态';
+          elFloatStatusMsg.textContent = '状态已更新';
+          const card = elBugList.querySelector(`.bug-card[data-id="${bug.id}"]`);
+          if (card) {
+            const badge = card.querySelector('.status-badge');
+            if (badge) { badge.textContent = statusLabel(newStatus); badge.className = `status-badge status-${newStatus}`; }
           }
-        }, 600);
-      } else {
-        msgEl.textContent = res.message || '更新失败';
+          setTimeout(() => {
+            updateTabBadges();
+            if (!bugBelongsToCurrentTab(bug)) { hideInlineActionBar(); renderCurrentTab(); }
+          }, 600);
+        } else {
+          msgEl.textContent = res.message || '更新失败';
+          msgEl.className = 'status-msg error';
+        }
+      } catch {
+        msgEl.textContent = '网络错误';
         msgEl.className = 'status-msg error';
       }
-    } catch (err) {
-      msgEl.textContent = '网络错误';
-      msgEl.className = 'status-msg error';
-    } finally {
-      confirmBtn.disabled = false;
     }
-  }
 
-  // 内嵌操作区事件
-  const inlineBtnConfirm = document.getElementById(`inlineBtnConfirm-${bug.id}`);
-  const inlineStatusSelect = document.getElementById(`inlineStatusSelect-${bug.id}`);
-  const inlineStatusMsg = document.getElementById(`inlineStatusMsg-${bug.id}`);
-  if (inlineBtnConfirm) {
-    inlineBtnConfirm.addEventListener('click', (e) => {
+    // 通用转交逻辑
+    async function doTransfer(msgEl) {
+      const targetUser = await promptSelectUser('选择转交对象', state.users, bug.assignee_id);
+      if (!targetUser) return;
+      msgEl.textContent = '转交中...';
+      msgEl.className = 'status-msg';
+      try {
+        const res = await window.bugViewerAPI.transferBug(bug.id, targetUser.id, state.currentUserId);
+        if (res.code === 0) {
+          msgEl.textContent = `已转交给 ${targetUser.display_name || targetUser.username}`;
+          bug.assignee_id = targetUser.id;
+          const idx = state.bugs.findIndex((b) => b.id === bug.id);
+          if (idx !== -1) state.bugs[idx].assignee_id = targetUser.id;
+        } else {
+          msgEl.textContent = res.message || '转交失败';
+          msgEl.className = 'status-msg error';
+        }
+      } catch {
+        msgEl.textContent = '网络错误';
+        msgEl.className = 'status-msg error';
+      }
+    }
+
+    // 构建状态下拉菜单
+    const STATUS_OPTIONS = [
+      { value: 'in_progress', label: '处理中' },
+      { value: 'fixed',       label: '已修复' },
+      { value: 'deferred',    label: '暂不处理' },
+      { value: 'closed',      label: '已关闭' },
+    ];
+
+    function buildStatusMenu(menuEl, labelEl, msgEl) {
+      menuEl.innerHTML = STATUS_OPTIONS.map((opt) =>
+        `<div class="dropdown-item${opt.value === bug.status ? ' active' : ''}" data-value="${opt.value}">${opt.label}</div>`
+      ).join('');
+      menuEl.querySelectorAll('.dropdown-item').forEach((item) => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          menuEl.classList.add('hidden');
+          submitStatus(item.dataset.value, msgEl, labelEl);
+        });
+      });
+    }
+
+    // 内嵌下拉
+    const inlineDropBtn = document.getElementById(`inlineBtnStatusDrop-${bug.id}`);
+    const inlineMenu    = document.getElementById(`inlineStatusMenu-${bug.id}`);
+    const inlineLabel   = document.getElementById(`inlineStatusLabel-${bug.id}`);
+    const inlineMsg     = document.getElementById(`inlineStatusMsg-${bug.id}`);
+    const inlineTransfer = document.getElementById(`inlineBtnTransfer-${bug.id}`);
+
+    if (inlineDropBtn && inlineMenu) {
+      buildStatusMenu(inlineMenu, inlineLabel, inlineMsg);
+      inlineDropBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        inlineMenu.classList.toggle('hidden');
+        elFloatStatusMenu.classList.add('hidden');
+      });
+    }
+    if (inlineTransfer) {
+      inlineTransfer.addEventListener('click', (e) => { e.stopPropagation(); doTransfer(inlineMsg); });
+    }
+
+    // 浮层下拉（重新绑）
+    buildStatusMenu(elFloatStatusMenu, elFloatStatusLabel, elFloatStatusMsg);
+    const newDropHandler = (e) => {
       e.stopPropagation();
-      submitStatus(inlineStatusSelect.value, inlineStatusMsg, inlineStatusSelect, inlineBtnConfirm);
-    });
+      elFloatStatusMenu.classList.toggle('hidden');
+      if (inlineMenu) inlineMenu.classList.add('hidden');
+    };
+    const newTransferHandler = () => doTransfer(elFloatStatusMsg);
+    elFloatBtnStatusDrop.onclick = newDropHandler;
+    elFloatBtnTransfer.onclick = newTransferHandler;
   }
 
-  // 浮层确认按钮事件
-  floatActionHandler = (e) => {
-    e.stopPropagation();
-    submitStatus(elFloatStatusSelect.value, elFloatStatusMsg, elFloatStatusSelect, elFloatBtnConfirm);
-  };
-  elFloatBtnConfirm.addEventListener('click', floatActionHandler);
-
-  // 获取展开卡片中"内联详情区"的引用，用于计算上边界约束
-  // 约束边界 = .card-inline-detail 的顶部（卡片标题区和展开内容区之间的分割线）
+  // 获取展开卡片中"内联详情区"的引用
   const expandedCard = sentinel.closest('.bug-card');
   const inlineDetailEl = expandedCard ? expandedCard.querySelector('.card-inline-detail') : null;
-  const FLOAT_BOTTOM_DEFAULT = 10; // px，正常吸底距窗口底部的距离
+  const FLOAT_BOTTOM_DEFAULT = 10;
 
-  // 获取浮层真实高度（display:none 时 offsetHeight 为 0，需临时显示再测量）
-  let FLOAT_HEIGHT = 100; // fallback
+  // 获取浮层真实高度
+  let FLOAT_HEIGHT = 100;
   {
     const wasHidden = elInlineActionBar.classList.contains('hidden');
     elInlineActionBar.classList.remove('hidden');
@@ -602,9 +929,7 @@ function bindInlineActionBar(bug, sentinel) {
     const sentinelRect = sentinel.getBoundingClientRect();
     const listRect = elBugList.getBoundingClientRect();
 
-    // 内嵌区完全在列表视口内 → 隐藏浮层
     const fullyVisible = sentinelRect.top >= listRect.top && sentinelRect.bottom <= listRect.bottom;
-    // 内嵌区在列表视口下方（还没滚到）→ 应吸底
     const isBelow = sentinelRect.bottom > listRect.bottom;
 
     if (fullyVisible) {
@@ -614,16 +939,11 @@ function bindInlineActionBar(bug, sentinel) {
       elInlineActionBar.classList.remove('hidden');
       sentinel.style.visibility = 'hidden';
 
-      // 上边界约束：以 .card-inline-detail 顶部为边界线
-      // 当展开内容区顶部滚近/滚出窗口底部时，浮层跟随其一起移出屏幕
       const boundaryRect = inlineDetailEl ? inlineDetailEl.getBoundingClientRect() : null;
       if (boundaryRect) {
         const windowHeight = window.innerHeight;
-        // 展开内容区顶部距窗口底部的剩余空间
-        // 正值 = 边界线仍在窗口内；≤0 = 边界线已滚出窗口底部
         const spaceAbove = windowHeight - boundaryRect.top;
         if (spaceAbove <= FLOAT_HEIGHT + FLOAT_BOTTOM_DEFAULT) {
-          // 边界线快贴近/已过窗口底部，浮层跟随边界线往下推
           const newBottom = spaceAbove - FLOAT_HEIGHT;
           elInlineActionBar.style.bottom = `${Math.max(newBottom, -FLOAT_HEIGHT)}px`;
         } else {
@@ -631,17 +951,22 @@ function bindInlineActionBar(bug, sentinel) {
         }
       }
     } else {
-      // 内嵌区已滚过视口上方
       elInlineActionBar.classList.add('hidden');
       sentinel.style.visibility = '';
     }
   }
 
-  // 延迟执行初次判断，等待 grid 展开动画（0.3s）完成后 sentinel 位置才准确
-  // 动画期间先保持浮层隐藏，避免闪烁
+  // 关闭点击其他区域时收起下拉菜单
+  document.addEventListener('click', () => {
+    elFloatStatusMenu.classList.add('hidden');
+    if (sentinel) {
+      const inlineMenu = sentinel.querySelector('.dropdown-menu');
+      if (inlineMenu) inlineMenu.classList.add('hidden');
+    }
+  }, { once: false });
+
   setTimeout(updateFloatBar, 350);
 
-  // 监听 #bugList 滚动
   floatActionObserver = { disconnect: () => elBugList.removeEventListener('scroll', updateFloatBar) };
   elBugList.addEventListener('scroll', updateFloatBar);
   floatActionObserver.observe = () => {};
@@ -650,7 +975,6 @@ function bindInlineActionBar(bug, sentinel) {
 function hideInlineActionBar() {
   elInlineActionBar.classList.add('hidden');
   elInlineActionBar.style.bottom = '';
-  // 恢复当前展开卡片内嵌操作区的可见性
   elBugList.querySelectorAll('.bug-card.expanded .status-changer').forEach((el) => {
     el.style.visibility = '';
   });
@@ -658,11 +982,8 @@ function hideInlineActionBar() {
     floatActionObserver.disconnect();
     floatActionObserver = null;
   }
-  if (floatActionHandler) {
-    elFloatBtnConfirm.removeEventListener('click', floatActionHandler);
-    floatActionHandler = null;
-  }
   floatActionBugId = null;
+  floatActionBug   = null;
 }
 
 // ── 详情面板 ──────────────────────────────────────────────────────────────
@@ -672,8 +993,6 @@ async function openDetail(bugId) {
   elDetailBadge.textContent = '';
   elDetailBadge.className = 'status-badge';
   state.detailOpen = true;
-
-  // Mark as read when opening
   markRead(bugId);
 
   try {
@@ -700,8 +1019,8 @@ function renderDetail(bug) {
     `<img class="detail-screenshot" src="${escHtml(screenshotUrl(s.file_path))}" alt="截图" data-src="${escHtml(screenshotUrl(s.file_path))}">`
   ).join('');
 
-  const reporter = bug.reporter ? (bug.reporter.username || bug.reporter.name || `#${bug.reporter_id}`) : (bug.reporter_id || '-');
-  const assignee = bug.assignee ? (bug.assignee.username || bug.assignee.name || `#${bug.assignee_id}`) : (bug.assignee_id ? `#${bug.assignee_id}` : '未分配');
+  const reporter = bug.reporter ? (bug.reporter.display_name || bug.reporter.username || `#${bug.reporter_id}`) : (bug.reporter_id || '-');
+  const assignee = bug.assignee ? (bug.assignee.display_name || bug.assignee.username || `#${bug.assignee_id}`) : (bug.assignee_id ? `#${bug.assignee_id}` : '未分配');
 
   const fields = [
     { label: '类型', value: bugTypeLabel(bug.bug_type) },
@@ -726,74 +1045,148 @@ function renderDetail(bug) {
     ? `<div class="detail-section-title">复现步骤</div><div class="detail-steps">${escHtml(bug.reproduction_steps)}</div>`
     : '';
 
+  const isReviewMode    = bug.status === 'fixed' && isReporter(bug) && bug.reporter_id !== bug.assignee_id;
+  const isWaitingReview = bug.status === 'fixed' && !isReporter(bug);
+
+  const actionHtml = isReviewMode ? `
+    <div class="status-changer">
+      <div class="action-bar-row">
+        <span class="action-bar-label">验收</span>
+        <div class="action-bar-btns">
+          <button class="btn-accept-pass" id="detailBtnAcceptPass">通过</button>
+          <button class="btn-accept-fail" id="detailBtnAcceptFail">不通过</button>
+        </div>
+      </div>
+      <div class="status-msg" id="detailAcceptMsg"></div>
+    </div>
+  ` : isWaitingReview ? `
+    <div class="status-changer">
+      <div class="action-bar-row waiting-review-hint">
+        <span class="waiting-review-label">等待提报人验收中…</span>
+      </div>
+    </div>
+  ` : `
+    <div class="status-changer">
+      <div class="action-bar-row">
+        <div class="action-bar-btns">
+          <div class="dropdown-wrap">
+            <button class="btn-status-drop" id="detailBtnStatusDrop">
+              <span id="detailStatusLabel">更改状态</span>
+              <span class="drop-arrow">▾</span>
+            </button>
+            <div class="dropdown-menu hidden" id="detailStatusMenu"></div>
+          </div>
+          <button class="btn-transfer" id="detailBtnTransfer">转交</button>
+        </div>
+      </div>
+      <div class="status-msg" id="detailStatusMsg"></div>
+    </div>
+  `;
+
   elDetailContent.innerHTML = `
     <div class="detail-title">#${bug.id} ${escHtml(bug.title)}</div>
     ${thumbsHtml}
     ${descHtml}
     ${stepsHtml}
     <div class="detail-fields">${fieldsHtml}</div>
-    <div class="status-changer">
-      <div class="detail-section-title">变更状态</div>
-      <div class="status-row">
-        <select class="status-select" id="newStatusSelect">
-          <option value="new"${bug.status === 'new' ? ' selected' : ''}>新建</option>
-          <option value="in_progress"${bug.status === 'in_progress' ? ' selected' : ''}>处理中</option>
-          <option value="fixed"${bug.status === 'fixed' ? ' selected' : ''}>已修复</option>
-          <option value="closed"${bug.status === 'closed' ? ' selected' : ''}>已关闭</option>
-        </select>
-        <button class="btn-confirm" id="btnConfirmStatus">确认</button>
-      </div>
-      <div class="status-msg" id="statusMsg"></div>
-    </div>
+    ${actionHtml}
   `;
 
   elDetailContent.querySelectorAll('.detail-screenshot').forEach((img) => {
     img.addEventListener('click', () => showImgOverlay(img.dataset.src));
   });
 
-  const btnConfirm = $('btnConfirmStatus');
-  const statusSelect = $('newStatusSelect');
-  const statusMsg = $('statusMsg');
+  if (isReviewMode) {
+    const btnPass = $('detailBtnAcceptPass');
+    const btnFail = $('detailBtnAcceptFail');
+    const msgEl   = $('detailAcceptMsg');
+    const doAccept = async (accepted, btn) => {
+      btn.disabled = true;
+      msgEl.textContent = '保存中...';
+      try {
+        const res = await window.bugViewerAPI.acceptBug(bug.id, accepted, state.currentUserId);
+        if (res.code === 0) {
+          msgEl.textContent = accepted ? '验收通过' : '已退回重新处理';
+          const newStatus = accepted ? 'closed' : 'in_progress';
+          bug.status = newStatus;
+          elDetailBadge.textContent = statusLabel(newStatus);
+          elDetailBadge.className = `status-badge status-${newStatus}`;
+          const idx = state.bugs.findIndex((b) => b.id === bug.id);
+          if (idx !== -1) state.bugs[idx].status = newStatus;
+          setTimeout(() => { updateTabBadges(); if (!bugBelongsToCurrentTab(bug)) closeDetail(); }, 500);
+        }
+      } catch { msgEl.textContent = '网络错误'; msgEl.className = 'status-msg error'; }
+      finally { btn.disabled = false; }
+    };
+    if (btnPass) btnPass.addEventListener('click', () => doAccept(true, btnPass));
+    if (btnFail) btnFail.addEventListener('click', () => doAccept(false, btnFail));
+  } else if (!isWaitingReview) {
+    const STATUS_OPTIONS = [
+      { value: 'in_progress', label: '处理中' },
+      { value: 'fixed',       label: '已修复' },
+      { value: 'deferred',    label: '暂不处理' },
+      { value: 'closed',      label: '已关闭' },
+    ];
+    const dropBtn  = $('detailBtnStatusDrop');
+    const menuEl   = $('detailStatusMenu');
+    const labelEl  = $('detailStatusLabel');
+    const msgEl    = $('detailStatusMsg');
+    const transBtn = $('detailBtnTransfer');
 
-  btnConfirm.addEventListener('click', async () => {
-    const newStatus = statusSelect.value;
-    if (newStatus === bug.status) {
-      statusMsg.textContent = '状态未变更';
-      statusMsg.className = 'status-msg';
-      return;
-    }
-    btnConfirm.disabled = true;
-    statusMsg.textContent = '保存中...';
-    statusMsg.className = 'status-msg';
-    try {
-      const res = await window.bugViewerAPI.updateBugStatus(bug.id, newStatus);
-      if (res.code === 0) {
-        statusMsg.textContent = '状态已更新';
-        statusMsg.className = 'status-msg';
-        const idx = state.bugs.findIndex((b) => b.id === bug.id);
-        if (idx !== -1) state.bugs[idx].status = newStatus;
-        bug.status = newStatus;
-        elDetailBadge.textContent = statusLabel(newStatus);
-        elDetailBadge.className = `status-badge status-${newStatus}`;
-        setTimeout(() => {
-          updateTabBadges();
-          // If current tab no longer contains this bug, close detail
-          const tabStatuses = TABS[state.activeTab].statuses;
-          if (!tabStatuses.includes(newStatus)) {
-            closeDetail();
+    if (menuEl) {
+      menuEl.innerHTML = STATUS_OPTIONS.map((opt) =>
+        `<div class="dropdown-item${opt.value === bug.status ? ' active' : ''}" data-value="${opt.value}">${opt.label}</div>`
+      ).join('');
+      menuEl.querySelectorAll('.dropdown-item').forEach((item) => {
+        item.addEventListener('click', async () => {
+          menuEl.classList.add('hidden');
+          const newStatus = item.dataset.value;
+          if (newStatus === bug.status) return;
+          let comment = '';
+          if (newStatus === 'deferred') {
+            const reason = await promptDeferReason();
+            if (reason === null) return;
+            comment = reason;
           }
-        }, 500);
-      } else {
-        statusMsg.textContent = res.message || '更新失败';
-        statusMsg.className = 'status-msg error';
-      }
-    } catch (e) {
-      statusMsg.textContent = '网络错误';
-      statusMsg.className = 'status-msg error';
-    } finally {
-      btnConfirm.disabled = false;
+          msgEl.textContent = '保存中...';
+          try {
+            const res = await window.bugViewerAPI.updateBugStatus(bug.id, newStatus, comment, state.currentUserId);
+            if (res.code === 0) {
+              msgEl.textContent = '状态已更新';
+              bug.status = newStatus;
+              if (labelEl) labelEl.textContent = '更改状态';
+              elDetailBadge.textContent = statusLabel(newStatus);
+              elDetailBadge.className = `status-badge status-${newStatus}`;
+              const idx = state.bugs.findIndex((b) => b.id === bug.id);
+              if (idx !== -1) state.bugs[idx].status = newStatus;
+              setTimeout(() => { updateTabBadges(); if (!bugBelongsToCurrentTab(bug)) closeDetail(); }, 500);
+            } else {
+              msgEl.textContent = res.message || '更新失败';
+              msgEl.className = 'status-msg error';
+            }
+          } catch { msgEl.textContent = '网络错误'; msgEl.className = 'status-msg error'; }
+        });
+      });
     }
-  });
+    if (dropBtn) dropBtn.addEventListener('click', () => menuEl && menuEl.classList.toggle('hidden'));
+    if (transBtn) {
+      transBtn.addEventListener('click', async () => {
+        const targetUser = await promptSelectUser('选择转交对象', state.users, bug.assignee_id);
+        if (!targetUser) return;
+        msgEl.textContent = '转交中...';
+        try {
+          const res = await window.bugViewerAPI.transferBug(bug.id, targetUser.id, state.currentUserId);
+          if (res.code === 0) {
+            msgEl.textContent = `已转交给 ${targetUser.display_name || targetUser.username}`;
+            bug.assignee_id = targetUser.id;
+          } else {
+            msgEl.textContent = res.message || '转交失败';
+            msgEl.className = 'status-msg error';
+          }
+        } catch { msgEl.textContent = '网络错误'; msgEl.className = 'status-msg error'; }
+      });
+    }
+  }
 }
 
 function closeDetail() {
@@ -802,12 +1195,104 @@ function closeDetail() {
   state.currentDetail = null;
 }
 
+// ── 暂不处理理由弹窗 ──────────────────────────────────────────────────────
+function promptDeferReason() {
+  return new Promise((resolve) => {
+    const existing = document.getElementById('deferReasonModal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'deferReasonModal';
+    modal.className = 'defer-reason-modal';
+    modal.innerHTML = `
+      <div class="defer-reason-dialog">
+        <div class="defer-reason-title">请填写暂不处理的理由</div>
+        <textarea id="deferReasonInput" class="defer-reason-textarea" placeholder="必填，说明暂不处理的原因..." rows="4"></textarea>
+        <div class="defer-reason-msg hidden" id="deferReasonMsg">理由不能为空</div>
+        <div class="defer-reason-actions">
+          <button class="btn-cancel" id="deferReasonCancel">取消</button>
+          <button class="btn-confirm" id="deferReasonConfirm">确认</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const input = document.getElementById('deferReasonInput');
+    const msg   = document.getElementById('deferReasonMsg');
+    const btnOk = document.getElementById('deferReasonConfirm');
+    const btnCa = document.getElementById('deferReasonCancel');
+
+    setTimeout(() => input.focus(), 50);
+
+    function cleanup() { modal.remove(); }
+
+    btnCa.addEventListener('click', () => { cleanup(); resolve(null); });
+    btnOk.addEventListener('click', () => {
+      const val = input.value.trim();
+      if (!val) { msg.classList.remove('hidden'); input.focus(); return; }
+      cleanup();
+      resolve(val);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); btnOk.click(); }
+      if (e.key === 'Escape') { btnCa.click(); }
+    });
+    modal.addEventListener('click', (e) => { if (e.target === modal) btnCa.click(); });
+  });
+}
+
+// ── 选择用户弹窗（转交） ──────────────────────────────────────────────────
+function promptSelectUser(title, users, excludeId) {
+  return new Promise((resolve) => {
+    const existing = document.getElementById('selectUserModal');
+    if (existing) existing.remove();
+
+    const candidates = users.filter((u) => u.id !== excludeId && u.id !== state.currentUserId);
+    if (candidates.length === 0) { resolve(null); return; }
+
+    const modal = document.createElement('div');
+    modal.id = 'selectUserModal';
+    modal.className = 'defer-reason-modal';
+    modal.innerHTML = `
+      <div class="defer-reason-dialog">
+        <div class="defer-reason-title">${escHtml(title)}</div>
+        <div class="user-pick-list" id="userPickList">
+          ${candidates.map((u) =>
+            `<div class="user-pick-item" data-uid="${u.id}">
+              <span class="user-pick-name">${escHtml(u.display_name || u.username)}</span>
+              <span class="user-pick-role">${escHtml(u.role)}</span>
+            </div>`
+          ).join('')}
+        </div>
+        <div class="defer-reason-actions">
+          <button class="btn-cancel" id="userPickCancel">取消</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const btnCa = document.getElementById('userPickCancel');
+    function cleanup() { modal.remove(); }
+
+    btnCa.addEventListener('click', () => { cleanup(); resolve(null); });
+    modal.addEventListener('click', (e) => { if (e.target === modal) { cleanup(); resolve(null); } });
+
+    document.querySelectorAll('.user-pick-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        const uid = Number(item.dataset.uid);
+        const user = candidates.find((u) => u.id === uid);
+        cleanup();
+        resolve(user || null);
+      });
+    });
+  });
+}
+
 // ── 图片预览 ──────────────────────────────────────────────────────────────
 function showImgOverlay(src) {
   if (window.bugViewerAPI && window.bugViewerAPI.previewImage) {
     window.bugViewerAPI.previewImage(src);
   } else {
-    // fallback: open in new tab
     window.open(src, '_blank');
   }
 }
@@ -834,7 +1319,7 @@ function closeFilterDrawer() {
   elBtnFilter.classList.remove('active');
 }
 
-function bindChipGroup(groupId, filterKey) {
+function bindChipGroup(groupId) {
   const group = $(groupId);
   if (!group) return;
   group.querySelectorAll('.chip').forEach((chip) => {
@@ -887,7 +1372,6 @@ function switchTab(tabKey) {
     btn.classList.toggle('active', btn.dataset.tab === tabKey);
   });
 
-  // Close detail panel and inline action bar when switching tabs
   closeDetail();
   hideInlineActionBar();
   renderCurrentTab();
@@ -904,7 +1388,6 @@ function bindEvents() {
     applyPinState();
   });
 
-  // 筛选面板
   elBtnFilter.addEventListener('click', () => toggleFilterDrawer());
   $('btnFilterClose').addEventListener('click', () => closeFilterDrawer());
   bindChipGroup('filterPriority');
@@ -947,7 +1430,6 @@ function bindEvents() {
 
   elBtnDetailBack.addEventListener('click', closeDetail);
 
-  // 主进程推送刷新事件（截图提交后）
   if (window.bugViewerAPI && window.bugViewerAPI.onRefresh) {
     window.bugViewerAPI.onRefresh(() => loadBugs(true));
   }
@@ -958,12 +1440,10 @@ async function init() {
   loadPrefs();
   loadReadIds();
 
-  // Sync active tab UI
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === state.activeTab);
   });
 
-  // Apply pin state (pinned=false by default, user must activate)
   applyPinState();
 
   await loadUsers();
@@ -976,4 +1456,4 @@ async function init() {
   startPolling();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+init();

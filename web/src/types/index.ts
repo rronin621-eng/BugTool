@@ -87,9 +87,9 @@ export const BUG_TYPES = [
 ] as const
 
 export const BUG_STATUSES = [
-  { value: 'new', label: '新建', type: 'info' },
   { value: 'in_progress', label: '处理中', type: 'warning' },
   { value: 'fixed', label: '已修复', type: 'success' },
+  { value: 'deferred', label: '暂不处理', type: 'info' },
   { value: 'closed', label: '已关闭', type: '' },
 ] as const
 

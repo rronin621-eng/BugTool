@@ -99,8 +99,19 @@ class BugUpdate(BaseModel):
 
 
 class BugStatusUpdate(BaseModel):
-    status: str  # new / in_progress / fixed / closed
+    status: str  # in_progress / fixed / closed / deferred
     comment: str = ""
+    operator_id: Optional[int] = None  # 操作人（转交时指定）
+
+
+class BugTransferRequest(BaseModel):
+    assignee_id: int  # 新接收人
+    operator_id: Optional[int] = None
+    comment: str = ""
+
+
+class BugCollaboratorUpdate(BaseModel):
+    user_ids: list  # 协作人 user_id 列表（全量更新）
 
 
 class BugResponse(BaseModel):
@@ -127,6 +138,7 @@ class BugDetailResponse(BugResponse):
     assignee: Optional[UserResponse] = None
     screenshots: list = []
     history: list = []
+    collaborators: list = []  # [UserResponse, ...]
 
     model_config = {"from_attributes": True}
 

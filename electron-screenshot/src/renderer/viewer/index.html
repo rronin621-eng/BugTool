@@ -81,12 +81,33 @@
   <!-- 内联操作区浮层：吸附在列表底部，操作区滚出视口时显示 -->
   <div id="inlineActionBar" class="inline-action-bar hidden">
     <div class="inline-action-bar-inner">
-      <div class="detail-section-title">变更状态</div>
-      <div class="status-row">
-        <select class="status-select" id="floatStatusSelect"></select>
-        <button class="btn-confirm" id="floatBtnConfirm">确认</button>
+      <!-- 普通操作区（变更状态 + 转交） -->
+      <div id="floatNormalActions">
+        <div class="action-bar-row">
+          <div class="action-bar-btns">
+            <div class="dropdown-wrap">
+              <button class="btn-status-drop" id="floatBtnStatusDrop">
+                <span id="floatStatusLabel">更改状态</span>
+                <span class="drop-arrow">▾</span>
+              </button>
+              <div class="dropdown-menu hidden" id="floatStatusMenu"></div>
+            </div>
+            <button class="btn-transfer" id="floatBtnTransfer">转交</button>
+          </div>
+        </div>
+        <div class="status-msg" id="floatStatusMsg"></div>
       </div>
-      <div class="status-msg" id="floatStatusMsg"></div>
+      <!-- 验收操作区（验收通过 + 不通过） -->
+      <div id="floatAcceptActions" class="hidden">
+        <div class="action-bar-row">
+          <span class="action-bar-label">验收</span>
+          <div class="action-bar-btns">
+            <button class="btn-accept-pass" id="floatBtnAcceptPass">通过</button>
+            <button class="btn-accept-fail" id="floatBtnAcceptFail">不通过</button>
+          </div>
+        </div>
+        <div class="status-msg" id="floatAcceptMsg"></div>
+      </div>
     </div>
   </div>
 

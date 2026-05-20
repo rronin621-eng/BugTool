@@ -143,7 +143,8 @@ async function startScreenshot() {
     });
 
     // Safety timeout: auto-close after 60s to prevent being stuck
-    const safetyTimer = setTimeout(() => {
+    // Can be extended via 'screenshot:extend-timeout' IPC when bug form is open
+    let safetyTimer = setTimeout(() => {
       if (screenshotWindow) {
         console.log('[Screenshot] Safety timeout - auto closing');
         screenshotWindow.destroy();
@@ -151,8 +152,23 @@ async function startScreenshot() {
       }
     }, 60000);
 
+    // Allow renderer to extend the timeout (e.g. when bug form overlay is open)
+    const { ipcMain } = require('electron');
+    const extendHandler = () => {
+      clearTimeout(safetyTimer);
+      safetyTimer = setTimeout(() => {
+        if (screenshotWindow) {
+          console.log('[Screenshot] Extended safety timeout - auto closing');
+          screenshotWindow.destroy();
+          screenshotWindow = null;
+        }
+      }, 10 * 60 * 1000); // 10 minutes
+    };
+    ipcMain.on('screenshot:extend-timeout', extendHandler);
+
     screenshotWindow.on('closed', () => {
       clearTimeout(safetyTimer);
+      ipcMain.removeListener('screenshot:extend-timeout', extendHandler);
       screenshotWindow = null;
       screenshotInProgress = false;
       // Restore viewer always-on-top after screenshot window closes

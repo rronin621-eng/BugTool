@@ -780,6 +780,8 @@ function showBugForm() {
   document.getElementById('submitStatus').classList.add('hidden');
 
   bugFormOverlay.classList.remove('hidden');
+  // 打开录入弹窗时，通知主进程将安全超时延长到 10 分钟，防止填写途中窗口被关闭
+  api.extendTimeout();
   document.getElementById('bugTitle').focus();
 }
 

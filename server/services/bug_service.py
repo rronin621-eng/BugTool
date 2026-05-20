@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
-from models import Bug, BugHistory, Screenshot, User
+from sqlalchemy import select, func, or_, delete
+from models import Bug, BugHistory, Screenshot, User, BugCollaborator
 from schemas import BugCreate, BugUpdate, BugStatusUpdate, UserResponse, ScreenshotResponse, BugHistoryResponse
 from typing import Optional
 
@@ -34,8 +34,10 @@ async def get_bugs(
         query = query.where(Bug.reporter_id == reporter_id)
         count_query = count_query.where(Bug.reporter_id == reporter_id)
     if assignee_id:
-        query = query.where(Bug.assignee_id == assignee_id)
-        count_query = count_query.where(Bug.assignee_id == assignee_id)
+        # 包含接收人 OR 协作人
+        collab_sub = select(BugCollaborator.bug_id).where(BugCollaborator.user_id == assignee_id)
+        query = query.where(or_(Bug.assignee_id == assignee_id, Bug.id.in_(collab_sub)))
+        count_query = count_query.where(or_(Bug.assignee_id == assignee_id, Bug.id.in_(collab_sub)))
     if inspection_task_id:
         query = query.where(Bug.inspection_task_id == inspection_task_id)
         count_query = count_query.where(Bug.inspection_task_id == inspection_task_id)
@@ -88,6 +90,13 @@ async def get_bug_detail(db: AsyncSession, bug_id: int):
     )
     history = hist_result.scalars().all()
 
+    # Get collaborators
+    collab_result = await db.execute(
+        select(User).join(BugCollaborator, BugCollaborator.user_id == User.id)
+        .where(BugCollaborator.bug_id == bug_id)
+    )
+    collaborators = collab_result.scalars().all()
+
     # Build detail dict manually
     from schemas import BugResponse
     detail = BugResponse.model_validate(bug).model_dump()
@@ -95,6 +104,7 @@ async def get_bug_detail(db: AsyncSession, bug_id: int):
     detail["assignee"] = UserResponse.model_validate(assignee).model_dump() if assignee else None
     detail["screenshots"] = [ScreenshotResponse.model_validate(s).model_dump() for s in screenshots]
     detail["history"] = [BugHistoryResponse.model_validate(h).model_dump() for h in history]
+    detail["collaborators"] = [UserResponse.model_validate(c).model_dump() for c in collaborators]
 
     return detail
 
@@ -109,7 +119,7 @@ async def create_bug(db: AsyncSession, bug_data: BugCreate):
     history = BugHistory(
         bug_id=bug.id,
         from_status=None,
-        to_status="new",
+        to_status="in_progress",
         operator_id=bug.reporter_id,
         comment="BUG创建",
     )
@@ -146,9 +156,37 @@ async def update_bug_status(db: AsyncSession, bug: Bug, status_data: BugStatusUp
     return bug
 
 
+async def transfer_bug(db: AsyncSession, bug: Bug, new_assignee_id: int, operator_id: int, comment: str = ""):
+    """转交 BUG 给新接收人，记录历史"""
+    old_assignee_id = bug.assignee_id
+    bug.assignee_id = new_assignee_id
+
+    note = comment or f"转交给用户#{new_assignee_id}"
+    history = BugHistory(
+        bug_id=bug.id,
+        from_status=bug.status,
+        to_status=bug.status,  # 状态不变
+        operator_id=operator_id or bug.reporter_id,
+        comment=f"[转交] {note}",
+    )
+    db.add(history)
+    await db.commit()
+    await db.refresh(bug)
+    return bug
+
+
+async def update_collaborators(db: AsyncSession, bug_id: int, user_ids: list):
+    """全量更新协作人列表"""
+    # 删除旧的协作人
+    await db.execute(delete(BugCollaborator).where(BugCollaborator.bug_id == bug_id))
+    # 插入新的协作人
+    for uid in user_ids:
+        db.add(BugCollaborator(bug_id=bug_id, user_id=uid))
+    await db.commit()
+
+
 async def delete_bug(db: AsyncSession, bug: Bug):
     # Delete related screenshots and history
-    await db.execute(select(Screenshot).where(Screenshot.bug_id == bug.id))
     ss_result = await db.execute(select(Screenshot).where(Screenshot.bug_id == bug.id))
     for ss in ss_result.scalars().all():
         await db.delete(ss)
@@ -156,6 +194,8 @@ async def delete_bug(db: AsyncSession, bug: Bug):
     hist_result = await db.execute(select(BugHistory).where(BugHistory.bug_id == bug.id))
     for h in hist_result.scalars().all():
         await db.delete(h)
+
+    await db.execute(delete(BugCollaborator).where(BugCollaborator.bug_id == bug.id))
 
     await db.delete(bug)
     await db.commit()
