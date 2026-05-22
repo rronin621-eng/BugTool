@@ -28,6 +28,16 @@
 
 ### 安装依赖
 
+**方式一：双击安装（推荐）**
+
+从 Git clone 后，在终端运行一次：
+```bash
+chmod +x 首次安装.command 启动BUG工具.command
+```
+然后双击「首次安装.command」，会自动检测环境并安装所有依赖。
+
+**方式二：手动安装**
+
 ```bash
 # 后端
 cd server && pip3 install -r requirements.txt
