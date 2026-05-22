@@ -45,6 +45,11 @@ check_and_install() {
     need_install=1
   fi
 
+  # 初始化示例数据（数据库为空时自动填充）
+  if [ -f "$ROOT/server/seed_data.py" ]; then
+    cd "$ROOT/server" && python3 seed_data.py 2>/dev/null
+  fi
+
   if [ $need_install -eq 1 ]; then
     echo "[准备] ✅ 依赖安装完成"
     echo ""
