@@ -708,6 +708,24 @@ function populateInspectionTaskSelect() {
     opt.textContent = task.name;
     select.appendChild(opt);
   }
+
+  // 选择走查项目时自动填充默认接收人和环境路径
+  select.addEventListener('change', () => {
+    const taskId = parseInt(select.value);
+    const task = state.inspectionTasks.find(t => t.id === taskId);
+    if (task) {
+      if (task.default_assignee_id) {
+        const assigneeSelect = document.getElementById('bugAssignee');
+        assigneeSelect.value = task.default_assignee_id;
+      }
+      if (task.default_env_url) {
+        const envUrlInput = document.getElementById('bugEnvUrl');
+        if (!envUrlInput.value) {
+          envUrlInput.value = task.default_env_url;
+        }
+      }
+    }
+  });
 }
 
 function populateModuleSelect() {
@@ -1028,7 +1046,7 @@ document.getElementById('btnBugSubmit').addEventListener('click', async () => {
       bug_type: bugType,
       priority,
       reporter_id: reporterId,
-      assignee_id: assigneeId ? parseInt(assigneeId) : null,
+      assignee_id: assigneeId ? parseInt(assigneeId) : reporterId,
       env_url: envUrl,
       inspection_task_id: inspectionTaskId ? parseInt(inspectionTaskId) : null,
       module_id: moduleId ? parseInt(moduleId) : null,

@@ -25,6 +25,8 @@ function getBugsForTab(tabKey) {
     if (tabKey === 'pending') {
       // 我负责 & 处理中/暂不处理
       if (iAm.assignee && (b.status === 'in_progress' || b.status === 'deferred')) return true;
+      // 我提报 & 无接收人 & 处理中 → 也归入待处理
+      if (iAm.reporter && !b.assignee_id && b.status === 'in_progress') return true;
       // 我提报 & fixed → 待我验收，归入待处理
       if (iAm.reporter && b.status === 'fixed') return true;
       return false;
