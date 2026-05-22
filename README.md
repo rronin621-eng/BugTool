@@ -38,6 +38,24 @@
 4. 开发人员打开 BUG 查看器（托盘菜单）查看待处理 BUG，更新状态
 5. 管理人员在 WEB 端统一查看、筛选、管理所有 BUG
 
+### 界面预览
+
+**托盘菜单 — 快速入口**
+
+![托盘菜单](docs/screenshots/tray-menu.png)
+
+**截图标注 + BUG 录入弹窗**
+
+![BUG录入](docs/screenshots/bug-submit.png)
+
+**BUG 查看器 — 悬浮窗口**
+
+![BUG查看器](docs/screenshots/bug-viewer.png)
+
+**WEB 管理端 — BUG 列表**
+
+![WEB管理端](docs/screenshots/web-list.png)
+
 ## 快速开始
 
 ### 环境要求
