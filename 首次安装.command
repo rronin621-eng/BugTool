@@ -59,6 +59,11 @@ cd "$ROOT/electron-screenshot" && npm install --silent 2>/dev/null
 echo "[5/5] 构建 Electron..."
 cd "$ROOT/electron-screenshot" && npm run build 2>/dev/null
 
+# 初始化示例数据
+echo ""
+echo "[额外] 初始化示例数据..."
+cd "$ROOT/server" && python3 seed_data.py
+
 echo ""
 echo "=========================================="
 echo "  ✅ 初始化完成！"
