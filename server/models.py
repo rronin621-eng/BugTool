@@ -19,6 +19,7 @@ class InspectionTask(Base):
     name = Column(String(200), nullable=False)
     description = Column(Text, default="")
     status = Column(String(20), default="active")  # active / ended
+    parent_id = Column(Integer, ForeignKey("inspection_tasks.id"), nullable=True)  # 父项目ID，null表示顶级项目
     default_assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     default_env_url = Column(String(500), default="")
     created_at = Column(DateTime, server_default=func.now())

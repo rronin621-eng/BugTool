@@ -31,6 +31,7 @@ class InspectionTaskCreate(BaseModel):
     name: str
     description: str = ""
     status: str = "active"
+    parent_id: Optional[int] = None
     default_assignee_id: Optional[int] = None
     default_env_url: str = ""
 
@@ -39,6 +40,7 @@ class InspectionTaskUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
+    parent_id: Optional[int] = None
     default_assignee_id: Optional[int] = None
     default_env_url: Optional[str] = None
 
@@ -48,6 +50,7 @@ class InspectionTaskResponse(BaseModel):
     name: str
     description: Optional[str] = None
     status: str
+    parent_id: Optional[int] = None
     default_assignee_id: Optional[int] = None
     default_env_url: Optional[str] = None
     created_at: Optional[datetime] = None

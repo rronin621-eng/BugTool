@@ -17,24 +17,49 @@
           <el-icon class="project-icon"><Collection /></el-icon>
           <span class="project-name">全部项目</span>
         </li>
-        <li
-          v-for="t in taskStore.tasks"
-          :key="t.id"
-          class="project-item"
-          :class="{ active: filters.inspection_task_id === t.id }"
-          @click="selectProject(t.id)"
-        >
-          <el-icon class="project-icon"><FolderOpened /></el-icon>
-          <span class="project-name">{{ t.name }}</span>
-          <span class="project-actions" @click.stop>
-            <button class="proj-action-btn" @click="openProjectDialog(t)" title="编辑">
-              <el-icon><Edit /></el-icon>
-            </button>
-            <button class="proj-action-btn danger" @click="handleDeleteProject(t)" title="删除">
-              <el-icon><Delete /></el-icon>
-            </button>
-          </span>
-        </li>
+        <!-- 递归树形渲染 -->
+        <template v-for="t in taskStore.taskTree" :key="t.id">
+          <li
+            class="project-item"
+            :class="{ active: filters.inspection_task_id === t.id }"
+            @click="selectProject(t.id)"
+          >
+            <el-icon class="project-icon"><FolderOpened /></el-icon>
+            <span class="project-name">{{ t.name }}</span>
+            <span class="project-actions" @click.stop>
+              <button class="proj-action-btn" @click="openProjectDialog(t)" title="编辑">
+                <el-icon><Edit /></el-icon>
+              </button>
+              <button class="proj-action-btn" @click="openProjectDialog(undefined, t.id)" title="添加子项目">
+                <el-icon><Plus /></el-icon>
+              </button>
+              <button class="proj-action-btn danger" @click="handleDeleteProject(t)" title="删除">
+                <el-icon><Delete /></el-icon>
+              </button>
+            </span>
+          </li>
+          <!-- 子项目 -->
+          <template v-if="t.children && t.children.length > 0">
+            <li
+              v-for="child in t.children"
+              :key="child.id"
+              class="project-item sub-project"
+              :class="{ active: filters.inspection_task_id === child.id }"
+              @click="selectProject(child.id)"
+            >
+              <el-icon class="project-icon"><Document /></el-icon>
+              <span class="project-name">{{ child.name }}</span>
+              <span class="project-actions" @click.stop>
+                <button class="proj-action-btn" @click="openProjectDialog(child)" title="编辑">
+                  <el-icon><Edit /></el-icon>
+                </button>
+                <button class="proj-action-btn danger" @click="handleDeleteProject(child)" title="删除">
+                  <el-icon><Delete /></el-icon>
+                </button>
+              </span>
+            </li>
+          </template>
+        </template>
       </ul>
     </div>
 
@@ -301,10 +326,21 @@
     </el-dialog>
 
     <!-- 新建/编辑项目弹窗 -->
-    <el-dialog v-model="showProjectDialog" :title="editingProject ? '编辑项目' : '新建项目'" width="500px" class="bug-dialog">
+    <el-dialog v-model="showProjectDialog" :title="editingProject ? '编辑项目' : (defaultParentId ? '新建子项目' : '新建项目')" width="500px" class="bug-dialog">
       <el-form :model="projectForm" label-width="100px">
         <el-form-item label="项目名称" required>
           <el-input v-model="projectForm.name" placeholder="请输入项目名称" />
+        </el-form-item>
+        <el-form-item label="父级项目">
+          <el-select v-model="projectForm.parent_id" clearable placeholder="无（顶级项目）" style="width: 100%">
+            <el-option
+              v-for="t in topLevelTasks"
+              :key="t.id"
+              :label="t.name"
+              :value="t.id"
+              :disabled="editingProject?.id === t.id"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="projectForm.description" type="textarea" :rows="2" placeholder="项目描述（可选）" />
@@ -335,10 +371,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Collection, FolderOpened, Search } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Collection, FolderOpened, Search, Document } from '@element-plus/icons-vue'
 import { useBugStore } from '../stores/bug'
 import { useUserStore } from '../stores/user'
 import { useInspectionTaskStore } from '../stores/inspection_task'
@@ -364,26 +400,35 @@ const submitting = ref(false)
 const showProjectDialog = ref(false)
 const projectSubmitting = ref(false)
 const editingProject = ref<InspectionTask | null>(null)
+const defaultParentId = ref<number | undefined>(undefined)
 const projectForm = ref({
   name: '',
   description: '',
   status: 'active',
+  parent_id: undefined as number | undefined,
   default_assignee_id: undefined as number | undefined,
   default_env_url: '',
 })
 
-function openProjectDialog(task?: InspectionTask) {
+// 顶级项目列表（用于父级选择下拉）
+const topLevelTasks = computed(() => {
+  return taskStore.tasks.filter(t => !t.parent_id)
+})
+
+function openProjectDialog(task?: InspectionTask, parentId?: number) {
   editingProject.value = task || null
+  defaultParentId.value = parentId
   if (task) {
     projectForm.value = {
       name: task.name,
       description: task.description || '',
       status: task.status,
+      parent_id: task.parent_id ?? undefined,
       default_assignee_id: task.default_assignee_id ?? undefined,
       default_env_url: task.default_env_url || '',
     }
   } else {
-    projectForm.value = { name: '', description: '', status: 'active', default_assignee_id: undefined, default_env_url: '' }
+    projectForm.value = { name: '', description: '', status: 'active', parent_id: parentId, default_assignee_id: undefined, default_env_url: '' }
   }
   showProjectDialog.value = true
 }
@@ -623,6 +668,14 @@ onMounted(() => {
 
 .project-item.active .project-icon {
   color: #111;
+}
+
+.project-item.sub-project {
+  padding-left: 26px;
+}
+
+.project-item.sub-project .project-icon {
+  font-size: 12px;
 }
 
 .project-icon {

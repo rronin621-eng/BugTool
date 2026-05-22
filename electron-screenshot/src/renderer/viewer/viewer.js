@@ -501,13 +501,6 @@ function renderInlineDetail(container, bug) {
           : '<span class="collab-empty">暂无协作人</span>'
         }
       </div>
-      <div class="collab-picker hidden" id="collabPicker-${bug.id}">
-        <div class="collab-picker-list" id="collabPickerList-${bug.id}"></div>
-        <div class="collab-picker-actions">
-          <button class="collab-picker-cancel btn-cancel-sm">取消</button>
-          <button class="collab-picker-confirm btn-confirm-sm">确认</button>
-        </div>
-      </div>
     </div>
   `;
 
@@ -544,111 +537,111 @@ function bindCollaboratorUI(container, bug) {
   let currentCollabIds = (bug.collaborators || []).map((c) => c.id);
 
   const btnAddCollab = container.querySelector('.btn-add-collab');
-  const picker = container.querySelector(`#collabPicker-${bug.id}`);
-  const pickerList = container.querySelector(`#collabPickerList-${bug.id}`);
-  const btnCancel = picker && picker.querySelector('.collab-picker-cancel');
-  const btnConfirm = picker && picker.querySelector('.collab-picker-confirm');
-
-  if (!btnAddCollab || !picker) return;
+  if (!btnAddCollab) return;
 
   btnAddCollab.addEventListener('click', (e) => {
     e.stopPropagation();
-    // 渲染候选人列表（排除当前接收人和提报人）
-    const excludeIds = new Set([bug.reporter_id, bug.assignee_id].filter(Boolean));
-    const candidates = state.users.filter((u) => !excludeIds.has(u.id));
-
-    pickerList.innerHTML = candidates.map((u) => {
-      const checked = currentCollabIds.includes(u.id) ? ' checked' : '';
-      const name = u.display_name || u.username;
-      return `<label class="collab-option"><input type="checkbox" value="${u.id}"${checked}><span>${escHtml(name)}</span></label>`;
-    }).join('');
-
-    picker.classList.toggle('hidden');
-    btnAddCollab.classList.toggle('active');
-  });
-
-  if (btnCancel) {
-    btnCancel.addEventListener('click', (e) => {
-      e.stopPropagation();
-      picker.classList.add('hidden');
-      btnAddCollab.classList.remove('active');
-    });
-  }
-
-  if (btnConfirm) {
-    btnConfirm.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const checked = Array.from(pickerList.querySelectorAll('input[type=checkbox]:checked'))
-        .map((cb) => Number(cb.value));
-
-      picker.classList.add('hidden');
-      btnAddCollab.classList.remove('active');
-      btnConfirm.disabled = true;
-
+    showCollabModal(bug, currentCollabIds, async (checkedIds) => {
       try {
-        const res = await window.bugViewerAPI.updateCollaborators(bug.id, checked);
+        const res = await window.bugViewerAPI.updateCollaborators(bug.id, checkedIds);
         if (res.code === 0) {
-          currentCollabIds = checked;
+          currentCollabIds = checkedIds;
           const updatedCollabs = (res.data && res.data.collaborators) || [];
-          // 更新 bug 对象中的 collaborators
           bug.collaborators = updatedCollabs;
-          // 重新渲染协作人标签
           const collabListEl = container.querySelector(`#collabList-${bug.id}`);
           if (collabListEl) {
-            if (updatedCollabs.length === 0) {
-              collabListEl.innerHTML = '<span class="collab-empty">暂无协作人</span>';
-            } else {
-              collabListEl.innerHTML = updatedCollabs.map((c) =>
-                `<span class="collab-tag" data-uid="${c.id}">${escHtml(c.display_name || c.username)}<button class="collab-remove" data-uid="${c.id}" title="移除">×</button></span>`
-              ).join('');
-              // 重新绑定移除按钮
-              collabListEl.querySelectorAll('.collab-remove').forEach((btn) => {
-                btn.addEventListener('click', async (ev) => {
-                  ev.stopPropagation();
-                  const uid = Number(btn.dataset.uid);
-                  const newIds = currentCollabIds.filter((id) => id !== uid);
-                  const r = await window.bugViewerAPI.updateCollaborators(bug.id, newIds);
-                  if (r.code === 0) {
-                    currentCollabIds = newIds;
-                    bug.collaborators = (r.data && r.data.collaborators) || [];
-                    btn.closest('.collab-tag').remove();
-                    if (currentCollabIds.length === 0) {
-                      collabListEl.innerHTML = '<span class="collab-empty">暂无协作人</span>';
-                    }
-                  }
-                });
-              });
-            }
+            renderCollabList(collabListEl, updatedCollabs, currentCollabIds, bug);
           }
         }
       } catch (err) {
         console.error('[Viewer] updateCollaborators error', err);
-      } finally {
-        btnConfirm.disabled = false;
       }
     });
-  }
+  });
 
   // 绑定现有协作人的移除按钮
   const collabListEl = container.querySelector(`#collabList-${bug.id}`);
   if (collabListEl) {
-    collabListEl.querySelectorAll('.collab-remove').forEach((btn) => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const uid = Number(btn.dataset.uid);
-        const newIds = currentCollabIds.filter((id) => id !== uid);
-        const r = await window.bugViewerAPI.updateCollaborators(bug.id, newIds);
-        if (r.code === 0) {
-          currentCollabIds = newIds;
-          bug.collaborators = (r.data && r.data.collaborators) || [];
-          btn.closest('.collab-tag').remove();
-          if (currentCollabIds.length === 0) {
-            collabListEl.innerHTML = '<span class="collab-empty">暂无协作人</span>';
-          }
-        }
-      });
-    });
+    bindCollabRemoveButtons(collabListEl, bug, currentCollabIds);
   }
+}
+
+function renderCollabList(collabListEl, collaborators, currentCollabIds, bug) {
+  if (collaborators.length === 0) {
+    collabListEl.innerHTML = '<span class="collab-empty">暂无协作人</span>';
+  } else {
+    collabListEl.innerHTML = collaborators.map((c) =>
+      `<span class="collab-tag" data-uid="${c.id}">${escHtml(c.display_name || c.username)}<button class="collab-remove" data-uid="${c.id}" title="移除">×</button></span>`
+    ).join('');
+    bindCollabRemoveButtons(collabListEl, bug, currentCollabIds);
+  }
+}
+
+function bindCollabRemoveButtons(collabListEl, bug, currentCollabIds) {
+  collabListEl.querySelectorAll('.collab-remove').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const uid = Number(btn.dataset.uid);
+      const newIds = currentCollabIds.filter((id) => id !== uid);
+      const r = await window.bugViewerAPI.updateCollaborators(bug.id, newIds);
+      if (r.code === 0) {
+        currentCollabIds.length = 0;
+        newIds.forEach((id) => currentCollabIds.push(id));
+        bug.collaborators = (r.data && r.data.collaborators) || [];
+        btn.closest('.collab-tag').remove();
+        if (currentCollabIds.length === 0) {
+          collabListEl.innerHTML = '<span class="collab-empty">暂无协作人</span>';
+        }
+      }
+    });
+  });
+}
+
+function showCollabModal(bug, currentCollabIds, onConfirm) {
+  // 移除已有弹窗
+  const existing = document.querySelector('.collab-modal-overlay');
+  if (existing) existing.remove();
+
+  const excludeIds = new Set([bug.reporter_id, bug.assignee_id].filter(Boolean));
+  const candidates = state.users.filter((u) => !excludeIds.has(u.id));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'collab-modal-overlay';
+  overlay.innerHTML = `
+    <div class="collab-modal">
+      <div class="collab-modal-header">
+        <span class="collab-modal-title">选择协作人</span>
+        <button class="collab-modal-close">×</button>
+      </div>
+      <div class="collab-modal-body">
+        ${candidates.map((u) => {
+          const checked = currentCollabIds.includes(u.id) ? ' checked' : '';
+          const name = u.display_name || u.username;
+          return `<label class="collab-option"><input type="checkbox" value="${u.id}"${checked}><span>${escHtml(name)}</span></label>`;
+        }).join('')}
+      </div>
+      <div class="collab-modal-footer">
+        <button class="btn-cancel-sm collab-modal-cancel">取消</button>
+        <button class="btn-confirm-sm collab-modal-confirm">确认</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const closeModal = () => overlay.remove();
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+  overlay.querySelector('.collab-modal-close').addEventListener('click', closeModal);
+  overlay.querySelector('.collab-modal-cancel').addEventListener('click', closeModal);
+  overlay.querySelector('.collab-modal-confirm').addEventListener('click', () => {
+    const checked = Array.from(overlay.querySelectorAll('input[type=checkbox]:checked'))
+      .map((cb) => Number(cb.value));
+    closeModal();
+    onConfirm(checked);
+  });
 }
 
 // ── 内联操作浮层控制 ──────────────────────────────────────────────────────
@@ -766,6 +759,7 @@ function bindInlineActionBar(bug, sentinel) {
     sentinel.innerHTML = `
       <div class="action-bar-row">
         <div class="action-bar-btns">
+          <button class="btn-transfer" id="inlineBtnTransfer-${bug.id}">转交</button>
           <div class="dropdown-wrap">
             <button class="btn-status-drop" id="inlineBtnStatusDrop-${bug.id}">
               <span id="inlineStatusLabel-${bug.id}">更改状态</span>
@@ -773,7 +767,6 @@ function bindInlineActionBar(bug, sentinel) {
             </button>
             <div class="dropdown-menu hidden" id="inlineStatusMenu-${bug.id}"></div>
           </div>
-          <button class="btn-transfer" id="inlineBtnTransfer-${bug.id}">转交</button>
         </div>
       </div>
       <div class="status-msg" id="inlineStatusMsg-${bug.id}"></div>
@@ -1069,6 +1062,7 @@ function renderDetail(bug) {
     <div class="status-changer">
       <div class="action-bar-row">
         <div class="action-bar-btns">
+          <button class="btn-transfer" id="detailBtnTransfer">转交</button>
           <div class="dropdown-wrap">
             <button class="btn-status-drop" id="detailBtnStatusDrop">
               <span id="detailStatusLabel">更改状态</span>
@@ -1076,7 +1070,6 @@ function renderDetail(bug) {
             </button>
             <div class="dropdown-menu hidden" id="detailStatusMenu"></div>
           </div>
-          <button class="btn-transfer" id="detailBtnTransfer">转交</button>
         </div>
       </div>
       <div class="status-msg" id="detailStatusMsg"></div>

@@ -11,9 +11,11 @@ export interface InspectionTask {
   name: string
   description?: string
   status: string
+  parent_id?: number | null
   default_assignee_id?: number | null
   default_env_url?: string | null
   created_at?: string
+  children?: InspectionTask[]
 }
 
 export interface FunctionModule {

@@ -175,6 +175,9 @@ body {
 .sidebar :deep(.el-menu--collapse .el-menu-item) {
   padding: 0 !important;
   justify-content: center;
+  width: 44px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* ── 底部版本号 ── */

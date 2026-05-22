@@ -21,8 +21,8 @@ export function toggleBugViewer() {
   }
 
   viewerWindow = new BrowserWindow({
-    width: 480,
-    height: 600,
+    width: 420,
+    height: 720,
     minWidth: 360,
     minHeight: 400,
     frame: false,
