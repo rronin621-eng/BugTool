@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('screenshotAPI', {
   extendTimeout: () => {
     ipcRenderer.send('screenshot:extend-timeout');
   },
+  setWindowLevel: (level: string) => {
+    ipcRenderer.send('screenshot:set-level', level);
+  },
   getUsers: () => {
     return ipcRenderer.invoke('users:list');
   },

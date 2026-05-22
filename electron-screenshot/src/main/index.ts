@@ -166,9 +166,23 @@ async function startScreenshot() {
     };
     ipcMain.on('screenshot:extend-timeout', extendHandler);
 
+    // Allow renderer to change window level (for IME input to show above)
+    const setLevelHandler = (_event: any, level: string) => {
+      if (screenshotWindow && !screenshotWindow.isDestroyed()) {
+        if (level === 'normal') {
+          // 输入时完全取消置顶，让输入法候选框能正常显示
+          screenshotWindow.setAlwaysOnTop(false);
+        } else {
+          screenshotWindow.setAlwaysOnTop(true, 'screen-saver');
+        }
+      }
+    };
+    ipcMain.on('screenshot:set-level', setLevelHandler);
+
     screenshotWindow.on('closed', () => {
       clearTimeout(safetyTimer);
       ipcMain.removeListener('screenshot:extend-timeout', extendHandler);
+      ipcMain.removeListener('screenshot:set-level', setLevelHandler);
       screenshotWindow = null;
       screenshotInProgress = false;
       // Restore viewer always-on-top after screenshot window closes

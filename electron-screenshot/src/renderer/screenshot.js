@@ -475,6 +475,9 @@ function showTextInput(x, y) {
   textInput.style.top = y + 'px';
   textInput.value = '';
 
+  // 降低窗口层级让输入法候选框能显示
+  api.setWindowLevel('normal');
+
   // 延迟 focus 避免 mouseup 事件立即触发 blur
   requestAnimationFrame(() => {
     textInput.focus();
@@ -500,6 +503,8 @@ function showTextInput(x, y) {
     textInput.classList.add('hidden');
     textInput.removeEventListener('keydown', handleKeyDown);
     textInput.removeEventListener('blur', handleBlur);
+    // 恢复窗口层级
+    api.setWindowLevel('screen-saver');
   };
 
   // blur 时用 setTimeout 给时间让 keydown 先处理
@@ -522,6 +527,8 @@ function showTextInput(x, y) {
       textInput.classList.add('hidden');
       textInput.removeEventListener('keydown', handleKeyDown);
       textInput.removeEventListener('blur', handleBlur);
+      // 恢复窗口层级
+      api.setWindowLevel('screen-saver');
     }
   };
 
@@ -800,6 +807,8 @@ function showBugForm() {
   bugFormOverlay.classList.remove('hidden');
   // 打开录入弹窗时，通知主进程将安全超时延长到 10 分钟，防止填写途中窗口被关闭
   api.extendTimeout();
+  // 降低窗口层级，让输入法候选框能正常显示
+  api.setWindowLevel('normal');
   document.getElementById('bugTitle').focus();
 }
 
@@ -1006,6 +1015,7 @@ document.getElementById('btnBugClear').addEventListener('click', () => {
 
 document.getElementById('btnBugCancel').addEventListener('click', () => {
   bugFormOverlay.classList.add('hidden');
+  api.setWindowLevel('screen-saver');
   api.cancel();
 });
 
@@ -1087,6 +1097,7 @@ document.addEventListener('keydown', (e) => {
       overlay.classList.remove('hidden');
       toolbar.classList.remove('hidden');
       document.body.style.cursor = 'crosshair';
+      api.setWindowLevel('screen-saver');
       positionToolbar();
     } else {
       api.cancel();
