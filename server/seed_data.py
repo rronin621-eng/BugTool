@@ -6,17 +6,94 @@ import sqlite3
 import os
 from datetime import datetime, timedelta
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "bug_tool.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bug_tool.db")
+
+
+def ensure_tables(cursor):
+    """确保所有表存在"""
+    cursor.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username VARCHAR(50) UNIQUE NOT NULL,
+            display_name VARCHAR(100) NOT NULL,
+            role VARCHAR(20) DEFAULT 'tester',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS inspection_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(200) NOT NULL,
+            description TEXT DEFAULT '',
+            status VARCHAR(20) DEFAULT 'active',
+            parent_id INTEGER REFERENCES inspection_tasks(id),
+            default_assignee_id INTEGER REFERENCES users(id),
+            default_env_url VARCHAR(500) DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS function_modules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name VARCHAR(200) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS bugs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title VARCHAR(200) NOT NULL,
+            description TEXT DEFAULT '',
+            bug_type VARCHAR(20) NOT NULL,
+            status VARCHAR(20) DEFAULT 'in_progress',
+            priority VARCHAR(20) DEFAULT 'medium',
+            reporter_id INTEGER NOT NULL REFERENCES users(id),
+            assignee_id INTEGER REFERENCES users(id),
+            env_url VARCHAR(500) DEFAULT '',
+            inspection_task_id INTEGER REFERENCES inspection_tasks(id),
+            module_id INTEGER REFERENCES function_modules(id),
+            reproduction_steps TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS screenshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bug_id INTEGER REFERENCES bugs(id),
+            file_path VARCHAR(500) NOT NULL,
+            file_name VARCHAR(200) NOT NULL,
+            file_size INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS bug_collaborators (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bug_id INTEGER NOT NULL REFERENCES bugs(id),
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS bug_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bug_id INTEGER NOT NULL REFERENCES bugs(id),
+            from_status VARCHAR(20),
+            to_status VARCHAR(20) NOT NULL,
+            operator_id INTEGER NOT NULL REFERENCES users(id),
+            comment TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
 
 
 def seed():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    # 先确保表存在
+    ensure_tables(cursor)
+    conn.commit()
+
     # 检查是否已有数据
     cursor.execute("SELECT COUNT(*) FROM users")
     if cursor.fetchone()[0] > 0:
-        print("数据库已有数据，跳过初始化。")
+        print("  数据库已有数据，跳过初始化。")
         conn.close()
         return
 
@@ -79,9 +156,9 @@ def seed():
 
     conn.commit()
     conn.close()
-    print("\n🎉 示例数据初始化完成！")
+    print("  🎉 示例数据初始化完成！")
 
 
 if __name__ == "__main__":
-    print("正在初始化示例数据...")
+    print("[数据] 检查示例数据...")
     seed()
