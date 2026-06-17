@@ -29,9 +29,9 @@ async function macScreenCapture(): Promise<string | null> {
   const tmpFile = path.join(os.tmpdir(), `bug-screenshot-${Date.now()}.png`);
 
   return new Promise((resolve) => {
-    // -x: no sound, -C: capture cursor, -t png: format
+    // -x: no sound, -t png: format (不加 -C，避免把鼠标光标拍进截图)
     // This captures the entire main display
-    execFile('/usr/sbin/screencapture', ['-x', '-C', '-t', 'png', tmpFile], async (error) => {
+    execFile('/usr/sbin/screencapture', ['-x', '-t', 'png', tmpFile], async (error) => {
       if (error) {
         console.error('[Screenshot] screencapture failed:', error);
         resolve(null);

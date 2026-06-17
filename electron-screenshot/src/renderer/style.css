@@ -116,6 +116,23 @@ body {
   box-shadow: 0 3px 10px rgba(220, 38, 38, 0.45);
 }
 
+.combine-btn {
+  color: #fff !important;
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  font-weight: 600;
+  padding: 5px 12px;
+  font-size: 13px;
+  border-radius: 7px;
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);
+  letter-spacing: 0.2px;
+}
+
+.combine-btn:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+  color: #fff !important;
+  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.45);
+}
+
 .cancel-btn {
   color: #94a3b8;
   font-size: 14px;

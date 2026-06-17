@@ -4,7 +4,7 @@
   "description": "BUG截图工具 - 快捷键截图+标注+录入BUG",
   "main": "dist/main/index.js",
   "scripts": {
-    "copy-renderer": "mkdir -p dist/renderer/viewer dist/assets && cp src/renderer/index.html src/renderer/screenshot.js src/renderer/style.css src/renderer/img-preview.html dist/renderer/ && cp src/renderer/viewer/index.html src/renderer/viewer/viewer.js src/renderer/viewer/viewer.css dist/renderer/viewer/ && cp src/assets/tray-icon.png src/assets/tray-icon@2x.png dist/assets/",
+    "copy-renderer": "mkdir -p dist/renderer/viewer dist/renderer/shared dist/renderer/stack dist/renderer/combine dist/assets && cp src/renderer/index.html src/renderer/screenshot.js src/renderer/style.css src/renderer/img-preview.html dist/renderer/ && cp src/renderer/viewer/index.html src/renderer/viewer/viewer.js src/renderer/viewer/viewer.css dist/renderer/viewer/ && cp src/renderer/shared/*.js dist/renderer/shared/ && (cp src/renderer/stack/* dist/renderer/stack/ 2>/dev/null || true) && (cp src/renderer/combine/* dist/renderer/combine/ 2>/dev/null || true) && cp src/assets/tray-icon.png src/assets/tray-icon@2x.png dist/assets/",
     "dev": "tsc && npm run copy-renderer && electron .",
     "build": "tsc && npm run copy-renderer",
     "start": "electron ."

@@ -3,6 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
+import {
+  addImage, removeImage, getImages, clearImages, getCount, getMaxImages,
+  showStackWindow, updateStackWindow, closeStackWindow,
+  openCombineWindow, closeCombineWindow, setCombineAlwaysOnTop,
+} from './multishot';
 
 let apiBase = 'http://localhost:8000/api/v1';
 
@@ -23,6 +28,115 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   ipcMain.removeHandler('bug:update-collaborators');
   ipcMain.removeHandler('bug:accept');
   ipcMain.removeHandler('image:preview');
+  ipcMain.removeHandler('multishot:get-list');
+  ipcMain.removeHandler('multishot:count');
+  ipcMain.removeHandler('combine:copy');
+  ipcMain.removeHandler('combine:save');
+
+  // ============================================================
+  // 多图功能 IPC
+  // ============================================================
+
+  // 添加一张图到多图收集（来自截图窗口），关闭来源窗口，弹出/刷新小窗
+  ipcMain.on('multishot:add', (event, dataUrl: string) => {
+    const result = addImage(dataUrl);
+    if (result.ok) {
+      // 关闭来源截图窗口
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (win && !win.isDestroyed()) win.destroy();
+      // 弹出或刷新暂存小窗
+      showStackWindow();
+      updateStackWindow();
+    } else {
+      // 已达上限，通知来源窗口
+      event.sender.send('multishot:add-rejected', result.reason);
+    }
+  });
+
+  // 查询当前图片列表
+  ipcMain.handle('multishot:get-list', () => {
+    return { images: getImages(), max: getMaxImages() };
+  });
+
+  // 查询当前数量
+  ipcMain.handle('multishot:count', () => {
+    return { count: getCount(), max: getMaxImages() };
+  });
+
+  // 删除指定索引的图片
+  ipcMain.on('multishot:remove', (_event, index: number) => {
+    const remaining = removeImage(index);
+    if (remaining === 0) {
+      closeStackWindow();
+      clearImages();
+    } else {
+      updateStackWindow();
+    }
+  });
+
+  // 清空所有图片并关闭小窗
+  ipcMain.on('multishot:clear', () => {
+    clearImages();
+    closeStackWindow();
+  });
+
+  // 打开组合编辑器
+  ipcMain.on('multishot:open-combine', () => {
+    if (getCount() === 0) return;
+    openCombineWindow();
+  });
+
+  // 组合编辑器输出成功后，清空 store 并关闭小窗与编辑器
+  ipcMain.on('multishot:finish', () => {
+    clearImages();
+    closeStackWindow();
+    closeCombineWindow();
+  });
+
+  // 关闭组合编辑器（取消）
+  ipcMain.on('multishot:close-combine', () => {
+    closeCombineWindow();
+  });
+
+  // 组合编辑器窗口层级控制（文字输入时）
+  ipcMain.on('combine:set-level', (_event, level: string) => {
+    setCombineAlwaysOnTop(level !== 'normal');
+  });
+
+  // 组合图复制到剪贴板，完成后清空并关闭
+  ipcMain.handle('combine:copy', (_event, dataUrl: string) => {
+    try {
+      const image = nativeImage.createFromDataURL(dataUrl);
+      clipboard.writeImage(image);
+      new Notification({ title: 'BUG截图工具', body: '组合图已复制到剪贴板' }).show();
+      clearImages();
+      closeStackWindow();
+      closeCombineWindow();
+      return { success: true };
+    } catch (err) {
+      console.error('[IPC] combine:copy error:', err);
+      return { success: false };
+    }
+  });
+
+  // 组合图保存到桌面，完成后清空并关闭
+  ipcMain.handle('combine:save', (_event, dataUrl: string, filename: string) => {
+    try {
+      const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      const savePath = path.join(require('os').homedir(), 'Desktop', filename);
+      fs.writeFileSync(savePath, buffer);
+      new Notification({ title: 'BUG截图工具', body: `组合图已保存到桌面：${filename}` }).show();
+      clearImages();
+      closeStackWindow();
+      closeCombineWindow();
+      return { success: true };
+    } catch (err) {
+      console.error('[IPC] combine:save error:', err);
+      return { success: false };
+    }
+  });
+
 
   // Close screenshot window (use destroy for reliable cleanup)
   ipcMain.on('screenshot:cancel', (event) => {

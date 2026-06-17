@@ -371,41 +371,8 @@ function redrawAnnotations() {
 }
 
 function drawAnnotation(ctx, ann) {
-  ctx.save();
-  ctx.strokeStyle = ann.color;
-  ctx.fillStyle = ann.color;
-  ctx.lineWidth = ann.lineWidth;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  if (ann.type === 'rect') {
-    const rx = Math.min(ann.x1, ann.x2);
-    const ry = Math.min(ann.y1, ann.y2);
-    const rw = Math.abs(ann.x2 - ann.x1);
-    const rh = Math.abs(ann.y2 - ann.y1);
-    ctx.strokeRect(rx, ry, rw, rh);
-  } else if (ann.type === 'arrow') {
-    drawArrow(ctx, ann.x1, ann.y1, ann.x2, ann.y2, ann.lineWidth);
-  } else if (ann.type === 'pen') {
-    drawPenPath(ctx, ann.points, ann.lineWidth);
-  } else if (ann.type === 'text') {
-    const fontSize = Math.max(14, ann.lineWidth * 5);
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.fillText(ann.text, ann.x, ann.y);
-    // text 工具模式下，绘制虚线包围框提示可拖拽
-    if (state.currentTool === 'text') {
-      const textWidth = ctx.measureText(ann.text).width;
-      ctx.save();
-      ctx.strokeStyle = 'rgba(25, 118, 210, 0.7)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.strokeRect(ann.x - 4, ann.y - fontSize - 2, textWidth + 8, fontSize + 6);
-      ctx.setLineDash([]);
-      ctx.restore();
-    }
-  }
-
-  ctx.restore();
+  // 复用共享标注模块；文字框仅在 text 工具激活时显示
+  window.AnnotateLib.drawAnnotation(ctx, ann, state.currentTool === 'text');
 }
 
 function drawRectPreview(mx, my) {
@@ -440,32 +407,11 @@ function drawPenPreview() {
 }
 
 function drawArrow(ctx, x1, y1, x2, y2, lineWidth) {
-  const headLen = Math.max(12, lineWidth * 4);
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-
-  // Line
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-
-  // Arrowhead
-  ctx.beginPath();
-  ctx.moveTo(x2, y2);
-  ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
-  ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
-  ctx.closePath();
-  ctx.fill();
+  window.AnnotateLib.drawArrow(ctx, x1, y1, x2, y2, lineWidth);
 }
 
 function drawPenPath(ctx, points, lineWidth) {
-  if (points.length < 2) return;
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(points[i].x, points[i].y);
-  }
-  ctx.stroke();
+  window.AnnotateLib.drawPenPath(ctx, points, lineWidth);
 }
 
 // ============ Text Annotation ============
@@ -595,6 +541,7 @@ document.getElementById('btnUndo').addEventListener('click', undoAnnotation);
 document.getElementById('btnClear').addEventListener('click', clearAnnotations);
 document.getElementById('btnCopy').addEventListener('click', copyToClipboard);
 document.getElementById('btnDownload').addEventListener('click', saveToDesktop);
+document.getElementById('btnMultiShot').addEventListener('click', addToMultiShot);
 document.getElementById('btnBug').addEventListener('click', showBugForm);
 document.getElementById('btnCancel').addEventListener('click', cancelScreenshot);
 
@@ -628,6 +575,22 @@ async function saveToDesktop() {
   const ts = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
   await api.saveToDesktop(dataUrl, `screenshot_${ts}.png`);
   // Main process will close the window and show system notification
+}
+
+// 多图：将当前带标注的截图加入暂存小窗
+async function addToMultiShot() {
+  try {
+    const { count, max } = await api.getMultiShotCount();
+    if (count >= max) {
+      showToast(`最多支持 ${max} 张`);
+      return;
+    }
+  } catch {
+    // 查询失败时仍尝试添加，由主进程兜底拦截
+  }
+  const dataUrl = exportAnnotatedImage();
+  api.addToMultiShot(dataUrl);
+  // 主进程会关闭当前截图窗口并弹出/刷新暂存小窗
 }
 
 function cancelScreenshot() {

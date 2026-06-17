@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>多图收集</title>
+  <link rel="stylesheet" href="stack.css">
+</head>
+<body>
+  <!-- 标题栏（可拖拽） -->
+  <div id="titlebar">
+    <span class="title-text">多图收集 <span id="count">(0/5)</span></span>
+  </div>
+
+  <!-- 提示词 -->
+  <div id="tipBar">💡 按 <b>Ctrl+Shift+A</b> 继续截图，点「多图」即可加入收集</div>
+
+  <!-- 缩略图列表 -->
+  <div id="thumbList"></div>
+
+  <!-- 底部操作 -->
+  <div id="footer">
+    <button id="btnCombine" disabled>生成组合图</button>
+    <button id="btnClear" title="清空">清空</button>
+  </div>
+
+  <script src="stack.js"></script>
+</body>
+</html>
