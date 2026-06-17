@@ -24,6 +24,7 @@ const state = {
   canvasH: 0,
   displayScale: 1,      // 画布自适应基础缩放比例
   viewZoom: 1,          // 用户手动视图缩放倍数
+  annoScale: 1,         // 标注尺寸缩放（适配高分辨率画布）
 };
 
 const GAP = 40;
@@ -74,6 +75,10 @@ function computeLayout() {
     w: s.img.width * s.scale,
     h: s.img.height * s.scale,
   }));
+
+  // 标注缩放：以最大图片自然高度为参考，适配高分屏截图
+  const maxNaturalH = Math.max(...state.slots.map((s) => s.img.height));
+  state.annoScale = Math.max(1, Math.min(6, maxNaturalH / 400));
 
   if (state.direction === 'horizontal') {
     const totalW = sizes.reduce((sum, s) => sum + s.w, 0) + GAP * (n - 1);
@@ -244,12 +249,12 @@ canvas.addEventListener('mouseup', (e) => {
   if (state.isDrawing && state.currentTool) {
     state.isDrawing = false;
     if (state.currentTool === 'rect') {
-      state.annotations.push({ type: 'rect', x1: state.drawStart.x, y1: state.drawStart.y, x2: pos.x, y2: pos.y, color: state.drawColor, lineWidth: state.lineWidth });
+      state.annotations.push({ type: 'rect', x1: state.drawStart.x, y1: state.drawStart.y, x2: pos.x, y2: pos.y, color: state.drawColor, lineWidth: effLineWidth() });
     } else if (state.currentTool === 'arrow') {
-      state.annotations.push({ type: 'arrow', x1: state.drawStart.x, y1: state.drawStart.y, x2: pos.x, y2: pos.y, color: state.drawColor, lineWidth: state.lineWidth });
+      state.annotations.push({ type: 'arrow', x1: state.drawStart.x, y1: state.drawStart.y, x2: pos.x, y2: pos.y, color: state.drawColor, lineWidth: effLineWidth() });
     } else if (state.currentTool === 'pen') {
       if (state.currentPath.length > 1) {
-        state.annotations.push({ type: 'pen', points: [...state.currentPath], color: state.drawColor, lineWidth: state.lineWidth });
+        state.annotations.push({ type: 'pen', points: [...state.currentPath], color: state.drawColor, lineWidth: effLineWidth() });
       }
       state.currentPath = [];
     }
@@ -282,11 +287,16 @@ function moveSlot(from, to) {
   state.slots.splice(to, 0, s);
 }
 
+// 实际标注线宽（按画布分辨率放大）
+function effLineWidth() {
+  return state.lineWidth * state.annoScale;
+}
+
 // ============ 标注预览 ============
 function drawPreviewRect(pos) {
   ctx.save();
   ctx.strokeStyle = state.drawColor;
-  ctx.lineWidth = state.lineWidth;
+  ctx.lineWidth = effLineWidth();
   const rx = Math.min(state.drawStart.x, pos.x);
   const ry = Math.min(state.drawStart.y, pos.y);
   ctx.strokeRect(rx, ry, Math.abs(pos.x - state.drawStart.x), Math.abs(pos.y - state.drawStart.y));
@@ -296,17 +306,17 @@ function drawPreviewArrow(pos) {
   ctx.save();
   ctx.strokeStyle = state.drawColor;
   ctx.fillStyle = state.drawColor;
-  ctx.lineWidth = state.lineWidth;
-  window.AnnotateLib.drawArrow(ctx, state.drawStart.x, state.drawStart.y, pos.x, pos.y, state.lineWidth);
+  ctx.lineWidth = effLineWidth();
+  window.AnnotateLib.drawArrow(ctx, state.drawStart.x, state.drawStart.y, pos.x, pos.y, effLineWidth());
   ctx.restore();
 }
 function drawPreviewPen() {
   ctx.save();
   ctx.strokeStyle = state.drawColor;
-  ctx.lineWidth = state.lineWidth;
+  ctx.lineWidth = effLineWidth();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  window.AnnotateLib.drawPenPath(ctx, state.currentPath, state.lineWidth);
+  window.AnnotateLib.drawPenPath(ctx, state.currentPath, effLineWidth());
   ctx.restore();
 }
 
@@ -325,7 +335,7 @@ function showTextInput(e, pos) {
     confirmed = true;
     const text = textInput.value.trim();
     if (text) {
-      state.annotations.push({ type: 'text', x: pos.x, y: pos.y + 18, text, color: state.drawColor, lineWidth: state.lineWidth });
+      state.annotations.push({ type: 'text', x: pos.x, y: pos.y + 18, text, color: state.drawColor, lineWidth: effLineWidth() });
       redraw();
     }
     textInput.classList.add('hidden');

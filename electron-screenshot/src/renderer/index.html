@@ -19,6 +19,15 @@
 
   <!-- 工具栏 -->
   <div id="toolbar" class="toolbar hidden">
+    <!-- 模式页签 -->
+    <div id="modeTabs" class="mode-tabs">
+      <button id="tabShot" class="mode-tab active">📷 截图</button>
+      <button id="tabRecord" class="mode-tab">⏺ 录屏</button>
+    </div>
+    <span class="toolbar-divider"></span>
+
+    <!-- 截图工具组 -->
+    <span id="shotTools" class="tool-group">
     <button id="btnRect" class="tool-btn active" title="矩形框">▭</button>
     <button id="btnArrow" class="tool-btn" title="箭头">→</button>
     <button id="btnPen" class="tool-btn" title="画笔">✎</button>
@@ -40,6 +49,17 @@
     <button id="btnDownload" class="tool-btn action-btn" title="保存到桌面">💾</button>
     <button id="btnMultiShot" class="tool-btn combine-btn" title="加入多图组合">＋组合</button>
     <button id="btnBug" class="tool-btn bug-btn" title="录入BUG">录入</button>
+    </span>
+
+    <!-- 录屏控制组 -->
+    <span id="recordTools" class="tool-group hidden">
+      <button id="btnRecStart" class="rec-btn start" title="开始录制">● 开始录制</button>
+      <button id="btnRecPause" class="rec-btn hidden" title="暂停/继续">⏸ 暂停</button>
+      <button id="btnRecStop" class="rec-btn stop hidden" title="停止">■ 停止</button>
+      <span id="recTimer" class="rec-timer hidden">00:00</span>
+      <span id="recStatus" class="rec-status"></span>
+    </span>
+
     <span class="toolbar-divider"></span>
     <button id="btnCancel" class="tool-btn cancel-btn small" title="取消 (Esc)">✕</button>
   </div>

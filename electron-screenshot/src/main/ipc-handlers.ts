@@ -8,6 +8,12 @@ import {
   showStackWindow, updateStackWindow, closeStackWindow,
   openCombineWindow, closeCombineWindow, setCombineAlwaysOnTop,
 } from './multishot';
+import {
+  openRecordWindow, closeRecordWindow, expandRecordWindow,
+  getPendingRegion, getPrimaryScreenSource,
+} from './record-window';
+import { execFile } from 'child_process';
+const ffmpegPath: string = require('ffmpeg-static');
 
 let apiBase = 'http://localhost:8000/api/v1';
 
@@ -32,6 +38,10 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   ipcMain.removeHandler('multishot:count');
   ipcMain.removeHandler('combine:copy');
   ipcMain.removeHandler('combine:save');
+  ipcMain.removeHandler('record:get-region');
+  ipcMain.removeHandler('record:get-screen-source');
+  ipcMain.removeHandler('record:save');
+  ipcMain.removeHandler('record:submit-bug');
 
   // ============================================================
   // 多图功能 IPC
@@ -101,6 +111,98 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   // 组合编辑器窗口层级控制（文字输入时）
   ipcMain.on('combine:set-level', (_event, level: string) => {
     setCombineAlwaysOnTop(level !== 'normal');
+  });
+
+  // ============================================================
+  // 录屏功能 IPC
+  // ============================================================
+
+  // 截图窗口请求开始录屏：关闭截图窗，打开录制控制窗
+  ipcMain.on('record:start', (event, region: any) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) win.destroy();
+    openRecordWindow(region);
+  });
+
+  // 录制窗口查询框选区域
+  ipcMain.handle('record:get-region', () => {
+    return getPendingRegion();
+  });
+
+  // 录制窗口查询屏幕采集源
+  ipcMain.handle('record:get-screen-source', async () => {
+    return await getPrimaryScreenSource();
+  });
+
+  // 录制结束，窗口扩展以显示保存/录入
+  ipcMain.on('record:expand', () => {
+    expandRecordWindow();
+  });
+
+  // 关闭录制窗口
+  ipcMain.on('record:close', () => {
+    closeRecordWindow();
+  });
+
+  // 保存录屏：接收 webm，转 mp4，存桌面
+  ipcMain.handle('record:save', async (_event, buffer: ArrayBuffer) => {
+    try {
+      const mp4Path = await processRecording(buffer);
+      const now = new Date();
+      const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const destName = `recording_${ts}.mp4`;
+      const destPath = path.join(require('os').homedir(), 'Desktop', destName);
+      fs.copyFileSync(mp4Path, destPath);
+      try { fs.unlinkSync(mp4Path); } catch {}
+      new Notification({ title: 'BUG截图工具', body: `录屏已保存到桌面：${destName}` }).show();
+      closeRecordWindow();
+      return { success: true };
+    } catch (err: any) {
+      console.error('[Record] save error:', err);
+      return { success: false, message: err.message || '保存失败' };
+    }
+  });
+
+  // 录入录屏 BUG：转 mp4 → 创建 BUG → 上传 mp4 附件
+  ipcMain.handle('record:submit-bug', async (_event, data: any) => {
+    try {
+      const mp4Path = await processRecording(data.webm);
+
+      const bugResponse = await httpRequest('POST', `${apiBase}/bugs`, {
+        title: data.title,
+        description: data.description,
+        bug_type: data.bug_type,
+        priority: data.priority,
+        reporter_id: data.reporter_id,
+        assignee_id: data.assignee_id || null,
+        env_url: data.env_url || '',
+        inspection_task_id: data.inspection_task_id || null,
+        module_id: data.module_id || null,
+        reproduction_steps: data.reproduction_steps || '',
+      });
+
+      if (bugResponse.code !== 0) {
+        try { fs.unlinkSync(mp4Path); } catch {}
+        return { success: false, message: bugResponse.message || '创建BUG失败' };
+      }
+
+      const bugId = bugResponse.data.id;
+      const uploadResult = await uploadFile(`${apiBase}/uploads/screenshot`, mp4Path, bugId, 'video/mp4');
+      try { fs.unlinkSync(mp4Path); } catch {}
+
+      if (uploadResult.code !== 0) {
+        return { success: true, bug_id: bugId, message: 'BUG已创建，但视频上传失败' };
+      }
+
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) win.webContents.send('viewer:refresh');
+      });
+      closeRecordWindow();
+      return { success: true, bug_id: bugId, message: 'BUG录入成功' };
+    } catch (err: any) {
+      console.error('[Record] submit error:', err);
+      return { success: false, message: err.message || '提交失败' };
+    }
   });
 
   // 组合图复制到剪贴板，完成后清空并关闭
@@ -374,6 +476,48 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   });
 }
 
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+// 将渲染层传来的 webm（ArrayBuffer）转换为 mp4，返回 mp4 临时文件路径
+function processRecording(buffer: ArrayBuffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const tempDir = path.join(require('os').tmpdir(), 'bug-screenshot-tool');
+      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+      const webmPath = path.join(tempDir, `rec_${Date.now()}.webm`);
+      const mp4Path = path.join(tempDir, `rec_${Date.now()}.mp4`);
+      fs.writeFileSync(webmPath, Buffer.from(buffer));
+
+      // libx264 + yuv420p + faststart 保证微信/QuickTime/浏览器广泛兼容
+      const args = [
+        '-i', webmPath,
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        '-y', mp4Path,
+      ];
+      execFile(ffmpegPath, args, (error) => {
+        try { fs.unlinkSync(webmPath); } catch {}
+        if (error) {
+          console.error('[Record] ffmpeg convert failed:', error);
+          // 兜底：把 webm 留到桌面，避免丢失
+          try {
+            const fallback = path.join(require('os').homedir(), 'Desktop', `recording_${Date.now()}.webm`);
+            fs.writeFileSync(fallback, Buffer.from(buffer));
+          } catch {}
+          reject(new Error('视频格式转换失败，已保留原始文件到桌面'));
+          return;
+        }
+        resolve(mp4Path);
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 function httpRequest(method: string, url: string, body?: any): Promise<any> {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
@@ -407,7 +551,7 @@ function httpRequest(method: string, url: string, body?: any): Promise<any> {
   });
 }
 
-function uploadFile(url: string, filePath: string, bugId: number): Promise<any> {
+function uploadFile(url: string, filePath: string, bugId: number, contentType: string = 'image/png'): Promise<any> {
   return new Promise((resolve, reject) => {
     const boundary = '----FormBoundary' + Date.now();
     const urlObj = new URL(url);
@@ -425,7 +569,7 @@ function uploadFile(url: string, filePath: string, bugId: number): Promise<any> 
 
     // file field
     parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: image/png\r\n\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${contentType}\r\n\r\n`
     ));
     parts.push(fileContent);
     parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));

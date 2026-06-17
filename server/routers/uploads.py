@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models import Screenshot
 from schemas import ScreenshotResponse, ApiResponse
-from config import UPLOAD_DIR, MAX_UPLOAD_SIZE
+from config import UPLOAD_DIR, MAX_UPLOAD_SIZE, MAX_VIDEO_SIZE
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -16,18 +16,24 @@ async def upload_screenshot(
     bug_id: int = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    # Validate file type
-    allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
+    # Validate file type（图片 + mp4 视频）
+    image_types = {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}
+    video_types = {"video/mp4"}
+    allowed_types = image_types | video_types
     if file.content_type not in allowed_types:
         return ApiResponse(code=1, message=f"不支持的文件类型: {file.content_type}")
 
     # Read file content
     content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
-        return ApiResponse(code=1, message="文件大小超过10MB限制")
+    is_video = file.content_type in video_types
+    size_limit = MAX_VIDEO_SIZE if is_video else MAX_UPLOAD_SIZE
+    if len(content) > size_limit:
+        limit_mb = size_limit // (1024 * 1024)
+        return ApiResponse(code=1, message=f"文件大小超过{limit_mb}MB限制")
 
     # Generate unique filename
-    ext = os.path.splitext(file.filename or "screenshot.png")[1] or ".png"
+    default_name = "recording.mp4" if is_video else "screenshot.png"
+    ext = os.path.splitext(file.filename or default_name)[1] or (".mp4" if is_video else ".png")
     filename = f"{uuid.uuid4().hex}{ext}"
     file_path = os.path.join(UPLOAD_DIR, filename)
 

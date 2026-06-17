@@ -96,6 +96,20 @@ function imgScaleY() {
   return state.screenshotImage.height / state.canvasH;
 }
 
+// 暴露给录屏模块：返回框选区域（屏幕物理像素）及屏幕信息
+window.getCaptureRegion = function () {
+  const s = state.selection;
+  if (!s || s.w <= 0 || s.h <= 0) return null;
+  return {
+    x: Math.round(s.x * imgScaleX()),
+    y: Math.round(s.y * imgScaleY()),
+    w: Math.round(s.w * imgScaleX()),
+    h: Math.round(s.h * imgScaleY()),
+    screenW: state.screenshotImage ? state.screenshotImage.width : 0,
+    screenH: state.screenshotImage ? state.screenshotImage.height : 0,
+  };
+};
+
 // ============ Selection ============
 drawCanvas.addEventListener('mousedown', (e) => {
   if (state.phase === 'select') {
@@ -543,6 +557,39 @@ document.getElementById('btnCopy').addEventListener('click', copyToClipboard);
 document.getElementById('btnDownload').addEventListener('click', saveToDesktop);
 document.getElementById('btnMultiShot').addEventListener('click', addToMultiShot);
 document.getElementById('btnBug').addEventListener('click', showBugForm);
+
+// ============ 截图/录屏 模式页签 ============
+const tabShot = document.getElementById('tabShot');
+const tabRecord = document.getElementById('tabRecord');
+const shotTools = document.getElementById('shotTools');
+const recordTools = document.getElementById('recordTools');
+
+if (tabShot && tabRecord) {
+  tabShot.addEventListener('click', () => switchMode('shot'));
+  tabRecord.addEventListener('click', () => switchMode('record'));
+}
+
+function switchMode(mode) {
+  if (mode === 'record') {
+    tabRecord.classList.add('active');
+    tabShot.classList.remove('active');
+    shotTools.classList.add('hidden');
+    recordTools.classList.remove('hidden');
+    // 录屏模式下隐藏标注遮罩上的标注层（保留选区边框）
+  } else {
+    tabShot.classList.add('active');
+    tabRecord.classList.remove('active');
+    recordTools.classList.add('hidden');
+    shotTools.classList.remove('hidden');
+  }
+}
+
+// 开始录制：把框选区域交给主进程，由主进程关闭截图窗并打开录制控制窗
+document.getElementById('btnRecStart').addEventListener('click', () => {
+  const region = window.getCaptureRegion ? window.getCaptureRegion() : null;
+  if (!region) { showToast('请先框选录制区域'); return; }
+  window.recordAPI.startRegionRecording(region);
+});
 document.getElementById('btnCancel').addEventListener('click', cancelScreenshot);
 
 function setTool(tool) {

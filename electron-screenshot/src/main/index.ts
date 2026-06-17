@@ -242,6 +242,18 @@ app.whenReady().then(() => {
   }
 
   console.log('[App] BUG截图工具已启动，按 Ctrl+Shift+A 截图');
+
+  // 注册屏幕采集处理器：录屏时 getDisplayMedia 自动选择主屏
+  const { session, desktopCapturer } = require('electron');
+  session.defaultSession.setDisplayMediaRequestHandler((_request: any, callback: any) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources: any[]) => {
+      const primary = screen.getPrimaryDisplay();
+      const source = sources.find((s) => s.display_id === String(primary.id)) || sources[0];
+      callback({ video: source, audio: false });
+    }).catch(() => {
+      callback({});
+    });
+  });
 });
 
 app.on('before-quit', () => {

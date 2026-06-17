@@ -73,6 +73,22 @@ contextBridge.exposeInMainWorld('stackAPI', {
   openCombine: () => ipcRenderer.send('multishot:open-combine'),
 });
 
+// 录屏 API
+contextBridge.exposeInMainWorld('recordAPI', {
+  // 截图窗口：请求开始录屏（传入框选区域）
+  startRegionRecording: (region: any) => ipcRenderer.send('record:start', region),
+  // 录制窗口：
+  getRegion: () => ipcRenderer.invoke('record:get-region'),
+  getScreenSource: () => ipcRenderer.invoke('record:get-screen-source'),
+  expand: () => ipcRenderer.send('record:expand'),
+  close: () => ipcRenderer.send('record:close'),
+  save: (buffer: ArrayBuffer) => ipcRenderer.invoke('record:save', buffer),
+  submitBug: (data: any) => ipcRenderer.invoke('record:submit-bug', data),
+  getUsers: () => ipcRenderer.invoke('users:list'),
+  getInspectionTasks: () => ipcRenderer.invoke('tasks:list'),
+  getFunctionModules: () => ipcRenderer.invoke('modules:list'),
+});
+
 // 组合编辑器 API
 contextBridge.exposeInMainWorld('combineAPI', {
   getList: () => ipcRenderer.invoke('multishot:get-list'),

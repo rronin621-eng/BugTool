@@ -10,6 +10,7 @@ CORS_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB（图片）
+MAX_VIDEO_SIZE = 200 * 1024 * 1024  # 200MB（视频）
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)

@@ -83,7 +83,7 @@ cd server && pip3 install -r requirements.txt
 # WEB 端
 cd web && npm install
 
-# Electron 截图工具
+# Electron 截图工具（首次安装会下载较大的 ffmpeg 依赖，约 70MB，用于录屏转 mp4）
 cd electron-screenshot && npm install && npm run build
 ```
 
