@@ -211,8 +211,10 @@ export async function submitBugViaBrowser(data: DmpBrowserSubmitData): Promise<D
     const args = [mode, String(row), form.story_value || ''];
     console.log(`[DMP-Browser] 执行：node ${scriptPath} ${args.join(' ')}`);
 
-    const child = spawn('node', [scriptPath, ...args], {
+    // 使用 Electron 自身的 Node 运行时执行脚本，避免生产环境没有系统 node 命令
+    const child = spawn(process.execPath, [scriptPath, ...args], {
       cwd: skillDir,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -312,6 +314,8 @@ export async function launchDmpBrowser(): Promise<LaunchDmpBrowserResult> {
   }
 
   // 3) 启动浏览器（CDP 模式）
+  // 使用独立的 user-data-dir，这样即使已有 Chrome 在运行，也会启动一个独立的 CDP 实例
+  const appName = isChromeFamily(defaultBundleId) ? 'Google Chrome' : 'Microsoft Edge';
   const userDataDir = path.join(skillDir, '.browser-profile');
   if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir, { recursive: true });
 
@@ -321,7 +325,6 @@ export async function launchDmpBrowser(): Promise<LaunchDmpBrowserResult> {
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-extensions',
-    '--disable-background-networking',
     '--disable-component-extensions-with-background-pages',
     '--disable-default-apps',
     '--new-window',
@@ -334,11 +337,11 @@ export async function launchDmpBrowser(): Promise<LaunchDmpBrowserResult> {
   browserProcess.unref();
 
   // 4) 等待 CDP 端口可用，确认浏览器真的启动了
-  const connected = await waitForCdp(playwright, 15000);
+  const connected = await waitForCdp(playwright, 20000);
   if (!connected) {
     return {
       success: false,
-      message: `浏览器似乎没有正常启动。如果浏览器已经在运行，请先退出再试一次。`,
+      message: `浏览器启动失败，请确认 ${appName} 已安装在「应用程序」文件夹中。`,
     };
   }
 

@@ -262,7 +262,7 @@ body {
 }
 
 .bug-form-overlay.form-mode {
-  background: transparent;
+  background: #fff;
   backdrop-filter: none;
   align-items: flex-start;
   justify-content: flex-start;
@@ -390,6 +390,7 @@ body {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  background: #fff;
 }
 
 .bug-form-fields::-webkit-scrollbar {

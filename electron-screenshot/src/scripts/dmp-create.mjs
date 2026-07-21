@@ -20,6 +20,7 @@ import path from 'path';
 import fs from 'fs';
 import process from 'process';
 import { createRequire } from 'module';
+import { execSync } from 'child_process';
 
 // 脚本被 spawn 时 cwd 已设置为 bug-batch-dmp-v2.0.0，因此从 cwd 解析依赖
 const cwdRequire = createRequire(path.join(process.cwd(), 'index.js'));
@@ -169,6 +170,43 @@ const page = browser.contexts().flatMap(c => c.pages()).find(p => p.url().includ
 if (!page) { console.error('找不到 DevOps 标签页，请确认已在 Chrome 中打开 DMP'); process.exit(1); }
 await page.bringToFront();
 
+// 检测浏览器名称，用于隐藏/恢复窗口
+let _ver = '';
+try { _ver = browser.version(); } catch {}
+const _appName = (_ver || '').includes('Edg') ? 'Microsoft Edge' : 'Google Chrome';
+let _browserHidden = false;
+
+function hideBrowser() {
+  if (_browserHidden) return;
+  try {
+    execSync(`osascript -e 'tell application "System Events" to set visible of process "${_appName}" to false'`, { stdio: 'ignore' });
+    _browserHidden = true;
+    console.log(`[browser] 已隐藏 ${_appName} 窗口，后台静默执行自动化...`);
+  } catch (e) {
+    console.log(`[browser] 隐藏窗口失败（继续执行）: ${e.message}`);
+  }
+}
+
+function showBrowser() {
+  if (!_browserHidden) return;
+  try {
+    execSync(`osascript -e 'tell application "${_appName}" to activate'`, { stdio: 'ignore' });
+    _browserHidden = false;
+    console.log(`[browser] 已恢复 ${_appName} 窗口`);
+  } catch (e) {
+    console.log(`[browser] 恢复窗口失败: ${e.message}`);
+  }
+}
+
+// 确保任何退出路径都恢复浏览器窗口
+process.on('exit', () => {
+  if (_browserHidden) {
+    try { execSync(`osascript -e 'tell application "${_appName}" to activate'`, { stdio: 'ignore' }); } catch {}
+  }
+});
+
+hideBrowser();
+
 let titleInput = null;
 
 if (mode === 'manual') {
@@ -182,6 +220,7 @@ if (mode === 'manual') {
     const opened = await openNewForm(page);
     if (!opened) {
       console.error('❌ 无法自动打开新建表单。请先手动打开 DMP 新建缺陷页再试。');
+      showBrowser();
       await browser.close(); process.exit(1);
     }
   }
@@ -191,6 +230,7 @@ if (mode === 'manual') {
   const opened = await openNewForm(page);
   if (!opened) {
     console.error('❌ 无法自动打开新建表单。');
+    showBrowser();
     await browser.close(); process.exit(1);
   }
 }
@@ -264,10 +304,12 @@ try {
   }
 
   console.log('\n✅ 已就绪，请用户在浏览器中检查并手动点击保存。');
+  showBrowser();
   await page.screenshot({ path: `screenshots/ready_${row}.png` }).catch(()=>{});
   process.exit(0);
 } catch (e) {
   console.error('\n❌ 执行失败:', e.message);
+  showBrowser();
   await page.screenshot({ path: `screenshots/error_${row}.png` }).catch(()=>{});
   process.exit(1);
 }
