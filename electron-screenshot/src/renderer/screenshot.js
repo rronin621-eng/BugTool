@@ -1388,14 +1388,18 @@ async function submitDmp(mode) {
         api.cancel(); // Close screenshot window after success
       }, 1500);
     } else {
-      statusEl.textContent = result.message || '提交失败';
+      const errMsg = result.message || '提交失败';
+      statusEl.textContent = errMsg;
       statusEl.className = 'submit-status error';
       statusEl.classList.remove('hidden');
+      showToast(errMsg.length > 50 ? errMsg.slice(0, 50) + '...' : errMsg);
     }
   } catch (e) {
-    statusEl.textContent = '提交失败：' + (e.message || '网络错误');
+    const errMsg = '提交失败：' + (e.message || '网络错误');
+    statusEl.textContent = errMsg;
     statusEl.className = 'submit-status error';
     statusEl.classList.remove('hidden');
+    showToast(errMsg.length > 50 ? errMsg.slice(0, 50) + '...' : errMsg);
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = originalText;
