@@ -69,38 +69,92 @@ const DISCOVERY_STAGE = DEFAULTS.discovery_stage || 'dev测试';
 const DISCOVERY_SEARCH = DISCOVERY_STAGE.replace(/测试|发布|编码|sit|sit测试|灰度/gi, '').trim() || DISCOVERY_STAGE.slice(0, 3);
 
 // ===== helper =====
+async function clickVisibleText(page, text, options = {}) {
+  const { exact = true, timeout = 2000, retry = 1 } = options;
+  const locator = exact
+    ? page.getByText(text, { exact: true })
+    : page.getByText(text);
+  for (let i = 0; i < retry; i++) {
+    try {
+      const first = locator.first();
+      await first.waitFor({ state: 'visible', timeout });
+      await first.click({ timeout });
+      console.log(`  点击成功: ${text}`);
+      return true;
+    } catch (e) {
+      if (i === retry - 1) {
+        console.log(`  点击失败或找不到: ${text} (${e.message})`);
+        return false;
+      }
+      await page.waitForTimeout(500);
+    }
+  }
+  return false;
+}
+
 async function navigateToDefectList(page) {
-  if (await page.locator('#tblnew').count() > 0) return true;
-  console.log('  导航: 应用 → 研发管理(DMP)...');
-  const clickText = (text) => page.evaluate((t) => {
-    const el = [...document.querySelectorAll('*')].find(e => e.textContent?.trim() === t && e.offsetParent !== null && e.children.length === 0);
-    if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-  }, text);
-  await clickText('应用');
-  await page.waitForTimeout(2000);
-  await clickText('研发管理（DMP）');
-  await page.waitForTimeout(5000);
-  if (await page.locator('#tblnew').count() > 0) return true;
-  // 真实 mouse.click 顶部"缺陷管理"图标（dispatchEvent 不导航，必须真实点击）
-  console.log('  导航: 点击缺陷管理图标...');
+  if (await page.locator('#tblnew').count() > 0) {
+    console.log('  已在缺陷列表页');
+    return true;
+  }
+
+  console.log('  导航: 尝试从首页/其他页进入缺陷列表...');
+
+  // 方案1: 应用 → 研发管理（DMP）
+  if (await clickVisibleText(page, '应用', { exact: false, timeout: 3000, retry: 2 })) {
+    await page.waitForTimeout(1500);
+    if (await clickVisibleText(page, '研发管理（DMP）', { exact: false, timeout: 3000, retry: 2 })) {
+      await page.waitForTimeout(5000);
+      if (await page.locator('#tblnew').count() > 0) return true;
+    }
+  }
+
+  // 方案2: 直接找"缺陷管理"入口（支持模糊匹配，允许图标子元素）
+  console.log('  导航: 尝试点击缺陷管理...');
+  if (await clickVisibleText(page, '缺陷管理', { exact: false, timeout: 3000, retry: 2 })) {
+    await page.waitForTimeout(6000);
+    if (await page.locator('#tblnew').count() > 0) return true;
+  }
+
+  // 方案3: 用真实鼠标点击第一个可见的"缺陷管理"元素
+  console.log('  导航: 尝试真实鼠标点击缺陷管理...');
   const coord = await page.evaluate(() => {
-    const els = [...document.querySelectorAll('*')].filter(e => e.textContent?.trim() === '缺陷管理' && e.offsetParent !== null && e.children.length === 0);
+    const els = [...document.querySelectorAll('*')].filter(e => {
+      const text = e.textContent?.trim() || '';
+      return text.includes('缺陷管理') && e.offsetParent !== null;
+    });
     els.sort((a, b) => a.getBoundingClientRect().y - b.getBoundingClientRect().y);
-    if (els[0]) { const r = els[0].getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }
+    if (els[0]) {
+      const r = els[0].getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }
     return null;
   });
-  if (coord) await page.mouse.click(coord.x, coord.y);
-  await page.waitForTimeout(6000);
+  if (coord) {
+    await page.mouse.click(coord.x, coord.y);
+    await page.waitForTimeout(6000);
+  }
+
   return await page.locator('#tblnew').count() > 0;
 }
 
 async function openNewForm(page) {
   if (await page.locator('input[placeholder="名称不能为空"]:visible').count() > 0) return true;
-  await navigateToDefectList(page);
+
+  const inList = await navigateToDefectList(page);
+  if (!inList) {
+    console.error('❌ 无法进入缺陷列表，请确认当前在 DMP 页面且已登录');
+    return false;
+  }
+
   if (await page.locator('#tblnew').count() > 0) {
     console.log('  点击 #tblnew 打开新建...');
-    await page.locator('#tblnew').click({ timeout: 5000 });
-    await page.waitForTimeout(5000);
+    try {
+      await page.locator('#tblnew').click({ timeout: 5000 });
+      await page.waitForTimeout(5000);
+    } catch (e) {
+      console.log('  #tblnew 点击失败:', e.message);
+    }
   }
   return await page.locator('input[placeholder="名称不能为空"]:visible').count() > 0;
 }
