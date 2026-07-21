@@ -1,0 +1,10 @@
+# 运行时数据（不推送）
+node_modules/
+.browser-profile/
+images/
+screenshots/
+.DS_Store
+
+# 运行时生成的文件
+pending_defects.json
+config.yaml

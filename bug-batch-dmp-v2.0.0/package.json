@@ -1,0 +1,13 @@
+{
+  "name": "bug-batch-dmp",
+  "version": "1.0.0",
+  "description": "读取飞书/腾讯文档/金山文档/本地Excel的BUG记录，自动在金蝶DMP缺陷管理系统批量创建缺陷单",
+  "type": "module",
+  "dependencies": {
+    "js-yaml": "^4.3.0",
+    "playwright": "^1.61.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

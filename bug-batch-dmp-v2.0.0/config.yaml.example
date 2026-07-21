@@ -1,0 +1,65 @@
+# ============================================================
+# 列名映射（所有数据源共用，按列名匹配，不依赖列顺序）
+# ============================================================
+column_mapping:
+  module: "模块"
+  screenshot: "问题截图"
+  description: "问题描述"
+  design_ref: "设计稿参考"
+  reviewer: "走查人"
+  progress: "进度"
+  handler: "处理人"
+  note: "备注"
+
+# ============================================================
+# DevOps 表单默认值
+# ============================================================
+devops_defaults:
+  project_name: "YOUR_PROJECT_NAME"
+  module_path: "YOUR_MODULE_PATH"
+  defect_type: "交互体验"
+  discovery_stage: "验收测试"
+  priority: "高"
+  source: "手工新增"
+  test_env: "YOUR_TEST_ENV"
+  project_team: "YOUR_TEAM"
+  related_story: "YOUR_STORY_ID"
+
+# ============================================================
+# 处理人姓名 → DevOps 工号映射
+# ============================================================
+handler_mapping:
+  张三: "10001"
+  李四: "10002"
+  王五: ""       # 暂未找到工号，将使用姓名直接搜索
+  default: "张三"
+
+# ============================================================
+# 数据源 API 凭证（按你使用的数据源配置，不用的可删除）
+# ============================================================
+
+# 飞书 API 凭证
+feishu_api:
+  app_id: "YOUR_APP_ID"
+  app_secret: "YOUR_APP_SECRET"
+  base_url: "https://open.feishu.cn/open-apis"
+
+# 腾讯文档 API 凭证
+tencent_api:
+  client_id: "YOUR_CLIENT_ID"
+  client_secret: "YOUR_CLIENT_SECRET"
+
+# 金山文档（WPS）API 凭证
+wps_api:
+  client_id: "YOUR_CLIENT_ID"
+  client_secret: "YOUR_CLIENT_SECRET"
+
+# ============================================================
+# 输出格式模板
+# ============================================================
+title_template: "【{progress}】【{module}】{description}"
+
+note_template: |
+  {original_note}
+  走查人{reviewer}
+  {design_ref_text}

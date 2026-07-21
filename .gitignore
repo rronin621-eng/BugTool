@@ -20,9 +20,6 @@ server/dist/
 server/build/
 server/*.spec
 
-# 外部依赖项目
-bug-batch-dmp-v2.0.0/
-
 # IDE 配置
 .kiro/
 .qoder/
