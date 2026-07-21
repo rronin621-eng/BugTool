@@ -27,7 +27,7 @@ const state = {
   annoScale: 1,         // 标注尺寸缩放（适配高分辨率画布）
 };
 
-const GAP = 40;
+const GAP = 70;
 const PADDING = 48;
 const SHADOW_BLUR = 18;
 const MAX_DISPLAY_W = 1080;

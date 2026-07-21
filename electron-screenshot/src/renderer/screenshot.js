@@ -25,6 +25,10 @@ const state = {
   dpr: window.devicePixelRatio || 1,
   canvasW: 0,  // logical (CSS) pixel width
   canvasH: 0,  // logical (CSS) pixel height
+  // 选框调整
+  resizingHandle: null,   // 当前拖动的手柄 id
+  resizeOrigin: null,     // resize 开始时的选区快照 { x,y,w,h }
+  resizeStart: null,      // resize 开始时的鼠标坐标 { x,y }
 };
 
 // ============ DOM Elements ============
@@ -46,6 +50,10 @@ const bugTextInput = document.getElementById('bugTextInput');
 
 // ============ Init ============
 const api = window.screenshotAPI;
+
+// 编辑模式状态
+let _editMode = false;
+let _editIndex = -1;
 
 api.onScreenshotStart((imageDataUrl) => {
   const img = new Image();
@@ -113,9 +121,19 @@ window.getCaptureRegion = function () {
 // ============ Selection ============
 drawCanvas.addEventListener('mousedown', (e) => {
   if (state.phase === 'select') {
+    // Notify main process to close all other display overlay windows
+    api.focusThisDisplay();
     state.isSelecting = true;
     state.selectStart = { x: e.clientX, y: e.clientY };
   } else if (state.phase === 'annotate') {
+    // 先检测是否命中手柄
+    const handle = hitTestHandle(e.clientX, e.clientY);
+    if (handle) {
+      state.resizingHandle = handle.id;
+      state.resizeOrigin = { ...state.selection };
+      state.resizeStart = { x: e.clientX, y: e.clientY };
+      return;
+    }
     handleAnnotationStart(e);
   }
 });
@@ -124,18 +142,30 @@ drawCanvas.addEventListener('mousemove', (e) => {
   if (state.phase === 'select' && state.isSelecting) {
     drawSelection(e.clientX, e.clientY);
   } else if (state.phase === 'annotate') {
+    // 手柄 resize
+    if (state.resizingHandle) {
+      applyResize(e.clientX, e.clientY);
+      return;
+    }
+    // 光标：悬停在手柄上时切换光标
+    const handle = hitTestHandle(e.clientX, e.clientY);
+    if (handle) {
+      drawCanvas.style.cursor = handle.cursor;
+    } else if (state.draggingTextIdx !== -1) {
+      drawCanvas.style.cursor = 'move';
+    } else {
+      if (state.currentTool === 'text') {
+        const hitIdx = hitTestTextAnnotation(e.clientX, e.clientY);
+        drawCanvas.style.cursor = hitIdx !== -1 ? 'move' : 'crosshair';
+      }
+    }
     if (state.draggingTextIdx !== -1) {
-      // 拖拽文字标注
       const ann = state.annotations[state.draggingTextIdx];
       ann.x = e.clientX - state.dragOffset.x;
       ann.y = e.clientY - state.dragOffset.y;
       redrawAnnotations();
     } else if (state.isDrawing) {
       handleAnnotationMove(e);
-    } else if (state.currentTool === 'text') {
-      // text 工具下，鼠标悬停在文字上时改变光标
-      const hitIdx = hitTestTextAnnotation(e.clientX, e.clientY);
-      drawCanvas.style.cursor = hitIdx !== -1 ? 'move' : 'crosshair';
     }
   }
 });
@@ -145,6 +175,13 @@ drawCanvas.addEventListener('mouseup', (e) => {
     state.isSelecting = false;
     finalizeSelection(e.clientX, e.clientY);
   } else if (state.phase === 'annotate') {
+    if (state.resizingHandle) {
+      state.resizingHandle = null;
+      state.resizeOrigin = null;
+      state.resizeStart = null;
+      positionToolbar();
+      return;
+    }
     if (state.draggingTextIdx !== -1) {
       state.draggingTextIdx = -1;
       drawCanvas.style.cursor = 'crosshair';
@@ -197,6 +234,87 @@ function drawSelection(mx, my) {
   selectionSize.textContent = `${w} × ${h}`;
 }
 
+// 编辑模式：接收已有图片，直接进入标注页面
+api.onEditStart((data) => {
+  _editMode = true;
+  _editIndex = data.editIndex;
+  const img = new Image();
+  img.onload = () => {
+    state.screenshotImage = img;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const dpr = state.dpr;
+    state.canvasW = w;
+    state.canvasH = h;
+
+    // 初始化 canvas
+    bgCanvas.width = w * dpr;  bgCanvas.height = h * dpr;
+    bgCanvas.style.width = w + 'px';  bgCanvas.style.height = h + 'px';
+    bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawCanvas.width = w * dpr;  drawCanvas.height = h * dpr;
+    drawCanvas.style.width = w + 'px';  drawCanvas.style.height = h + 'px';
+    drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // 编辑模式：填充深色背景
+    bgCtx.fillStyle = '#1e1e2e';
+    bgCtx.fillRect(0, 0, w, h);
+
+    // 保持原始宽高比，居中绘制图片（留出底部工具栏空间）
+    const padX = 20;
+    const padTop = 16;
+    const padBottom = 52; // 底部工具栏空间
+    const availW = w - padX * 2;
+    const availH = h - padTop - padBottom;
+    const imgAspect = img.width / img.height;
+    const availAspect = availW / availH;
+    let drawW, drawH, drawX, drawY;
+    if (imgAspect > availAspect) {
+      drawW = availW;
+      drawH = availW / imgAspect;
+    } else {
+      drawH = availH;
+      drawW = availH * imgAspect;
+    }
+    drawX = (w - drawW) / 2;
+    drawY = padTop + (availH - drawH) / 2;
+
+    // 存储编辑模式下的图片绘制区域，用于正确导出
+    state._editDrawRegion = { x: drawX, y: drawY, w: drawW, h: drawH };
+
+    bgCtx.drawImage(img, 0, 0, img.width, img.height, drawX, drawY, drawW, drawH);
+    drawCtx.clearRect(0, 0, w, h);
+
+    state.annotations = [];
+    state.selection = { x: drawX, y: drawY, w: drawW, h: drawH };
+    state.phase = 'annotate';
+
+    overlay.classList.remove('hidden');
+    toolbar.classList.remove('hidden');
+
+    // 隐藏编辑模式下不需要的按钮
+    const modeTabs = document.getElementById('modeTabs');
+    if (modeTabs) modeTabs.style.display = 'none';
+    if (modeTabs && modeTabs.nextElementSibling && modeTabs.nextElementSibling.classList.contains('toolbar-divider')) {
+      modeTabs.nextElementSibling.style.display = 'none';
+    }
+
+    // 工具栏固定到底部居中
+    requestAnimationFrame(() => {
+      toolbar.style.left = ((w - toolbar.offsetWidth) / 2) + 'px';
+      toolbar.style.top = (h - 44) + 'px';
+    });
+
+    loadUsers();
+    loadInspectionTasks();
+    loadFunctionModules();
+  };
+  img.onerror = () => {
+    console.error('[Edit] Failed to load image data');
+    api.cancel();
+  };
+  img.src = data.dataUrl;
+});
+
 function finalizeSelection(mx, my) {
   const x = Math.min(state.selectStart.x, mx);
   const y = Math.min(state.selectStart.y, my);
@@ -222,6 +340,7 @@ function finalizeSelection(mx, my) {
   // Show toolbar FIRST (so offsetWidth is measurable), then position it
   toolbar.classList.remove('hidden');
   positionToolbar();
+  redrawAnnotations(); // 绘制选框边框与手柄
 
   // Load users for bug form
   loadUsers();
@@ -251,6 +370,82 @@ function positionToolbar() {
 
   toolbar.style.left = toolbarX + 'px';
   toolbar.style.top = toolbarY + 'px';
+}
+
+// ============ Selection Resize Handles ============
+
+const HANDLE_R = 5; // 手柄半径（CSS 像素）
+
+// 8 个手柄定义，每个含 id 和光标样式
+function getHandles() {
+  const { x, y, w, h } = state.selection;
+  const cx = x + w / 2, cy = y + h / 2;
+  return [
+    { id: 'nw', px: x,      py: y,      cursor: 'nwse-resize' },
+    { id: 'n',  px: cx,     py: y,      cursor: 'ns-resize'   },
+    { id: 'ne', px: x + w,  py: y,      cursor: 'nesw-resize' },
+    { id: 'e',  px: x + w,  py: cy,     cursor: 'ew-resize'   },
+    { id: 'se', px: x + w,  py: y + h,  cursor: 'nwse-resize' },
+    { id: 's',  px: cx,     py: y + h,  cursor: 'ns-resize'   },
+    { id: 'sw', px: x,      py: y + h,  cursor: 'nesw-resize' },
+    { id: 'w',  px: x,      py: cy,     cursor: 'ew-resize'   },
+  ];
+}
+
+function hitTestHandle(mx, my) {
+  if (state.phase !== 'annotate') return null;
+  for (const h of getHandles()) {
+    if (Math.abs(mx - h.px) <= HANDLE_R + 3 && Math.abs(my - h.py) <= HANDLE_R + 3) return h;
+  }
+  return null;
+}
+
+function drawHandles() {
+  for (const h of getHandles()) {
+    drawCtx.save();
+    drawCtx.beginPath();
+    drawCtx.arc(h.px, h.py, HANDLE_R, 0, Math.PI * 2);
+    drawCtx.fillStyle = '#fff';
+    drawCtx.shadowColor = 'rgba(0,0,0,0.4)';
+    drawCtx.shadowBlur = 4;
+    drawCtx.fill();
+    drawCtx.shadowBlur = 0;
+    drawCtx.strokeStyle = '#1976d2';
+    drawCtx.lineWidth = 1.5;
+    drawCtx.stroke();
+    drawCtx.restore();
+  }
+}
+
+function redrawSelectionBackground() {
+  const { x, y, w, h } = state.selection;
+  const cw = state.canvasW, ch = state.canvasH;
+  bgCtx.clearRect(0, 0, cw, ch);
+  bgCtx.drawImage(state.screenshotImage, 0, 0, cw, ch);
+  bgCtx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+  bgCtx.fillRect(0, 0, cw, ch);
+  bgCtx.clearRect(x, y, w, h);
+  const sx = x * imgScaleX(), sy = y * imgScaleY(),
+        sw = w * imgScaleX(), sh = h * imgScaleY();
+  bgCtx.drawImage(state.screenshotImage, sx, sy, sw, sh, x, y, w, h);
+}
+
+function applyResize(mx, my) {
+  const o = state.resizeOrigin;
+  const dx = mx - state.resizeStart.x;
+  const dy = my - state.resizeStart.y;
+  const id = state.resizingHandle;
+  const MIN = 20;
+
+  let { x, y, w, h } = o;
+  if (id.includes('e')) { w = Math.max(MIN, o.w + dx); }
+  if (id.includes('s')) { h = Math.max(MIN, o.h + dy); }
+  if (id.includes('w')) { const nw = Math.max(MIN, o.w - dx); x = o.x + (o.w - nw); w = nw; }
+  if (id.includes('n')) { const nh = Math.max(MIN, o.h - dy); y = o.y + (o.h - nh); h = nh; }
+
+  state.selection = { x, y, w, h };
+  redrawSelectionBackground();
+  redrawAnnotations();
 }
 
 // ============ Annotation Tools ============
@@ -370,13 +565,23 @@ function handleAnnotationEnd(e) {
 function redrawAnnotations() {
   drawCtx.clearRect(0, 0, state.canvasW, state.canvasH);
 
-  // Redraw selection border
-  const { x, y, w, h } = state.selection;
-  drawCtx.strokeStyle = '#1976d2';
-  drawCtx.lineWidth = 1;
-  drawCtx.setLineDash([4, 4]);
-  drawCtx.strokeRect(x, y, w, h);
-  drawCtx.setLineDash([]);
+  // 编辑模式不画选区边框和拖拽把手，但画图片区域边框
+  if (!_editMode) {
+    const { x, y, w, h } = state.selection;
+    drawCtx.strokeStyle = '#1976d2';
+    drawCtx.lineWidth = 1.5;
+    drawCtx.setLineDash([4, 4]);
+    drawCtx.strokeRect(x, y, w, h);
+    drawCtx.setLineDash([]);
+    drawHandles();
+  } else if (state._editDrawRegion) {
+    // 编辑模式：画一个细边框标识图片区域
+    const { x, y, w, h } = state._editDrawRegion;
+    drawCtx.strokeStyle = 'rgba(137, 180, 250, 0.6)';
+    drawCtx.lineWidth = 2;
+    drawCtx.setLineDash([]);
+    drawCtx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+  }
 
   // Redraw all annotations
   for (const ann of state.annotations) {
@@ -499,6 +704,34 @@ function showTextInput(x, y) {
 // ============ Export Annotated Image ============
 function exportAnnotatedImage() {
   const { x, y, w, h } = state.selection;
+
+  if (_editMode && state._editDrawRegion) {
+    // 编辑模式：图片居中绘制，使用不同的坐标映射
+    const region = state._editDrawRegion;
+    const editScaleX = state.screenshotImage.width / region.w;
+    const editScaleY = state.screenshotImage.height / region.h;
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = state.screenshotImage.width;
+    exportCanvas.height = state.screenshotImage.height;
+    const ctx = exportCanvas.getContext('2d');
+
+    // 绘制完整原始图片
+    ctx.drawImage(state.screenshotImage, 0, 0);
+
+    // 绘制标注（从画布坐标转换到图片坐标）
+    ctx.save();
+    ctx.scale(editScaleX, editScaleY);
+    ctx.translate(-region.x, -region.y);
+    for (const ann of state.annotations) {
+      drawAnnotation(ctx, ann);
+    }
+    ctx.restore();
+
+    return exportCanvas.toDataURL('image/png');
+  }
+
+  // 正常截图模式
   const scaleX = imgScaleX();
   const scaleY = imgScaleY();
 
@@ -557,6 +790,7 @@ document.getElementById('btnCopy').addEventListener('click', copyToClipboard);
 document.getElementById('btnDownload').addEventListener('click', saveToDesktop);
 document.getElementById('btnMultiShot').addEventListener('click', addToMultiShot);
 document.getElementById('btnBug').addEventListener('click', showBugForm);
+document.getElementById('btnConfirm').addEventListener('click', confirmAndContinue);
 
 // ============ 截图/录屏 模式页签 ============
 const tabShot = document.getElementById('tabShot');
@@ -570,17 +804,19 @@ if (tabShot && tabRecord) {
 }
 
 function switchMode(mode) {
+  const btnConfirm = document.getElementById('btnConfirm');
   if (mode === 'record') {
     tabRecord.classList.add('active');
     tabShot.classList.remove('active');
     shotTools.classList.add('hidden');
     recordTools.classList.remove('hidden');
-    // 录屏模式下隐藏标注遮罩上的标注层（保留选区边框）
+    if (btnConfirm) btnConfirm.classList.add('hidden');
   } else {
     tabShot.classList.add('active');
     tabRecord.classList.remove('active');
     recordTools.classList.add('hidden');
     shotTools.classList.remove('hidden');
+    if (btnConfirm) btnConfirm.classList.remove('hidden');
   }
 }
 
@@ -633,16 +869,47 @@ async function addToMultiShot() {
       return;
     }
   } catch {
-    // 查询失败时仍尝试添加，由主进程兜底拦截
+    // 查询失败时仍尝试添加，由主进程兆底拦截
   }
   const dataUrl = exportAnnotatedImage();
-  api.addToMultiShot(dataUrl);
-  // 主进程会关闭当前截图窗口并弹出/刷新暂存小窗
+  const textAnnotations = state.annotations.filter(a => a.type === 'text');
+  const hasText = textAnnotations.length > 0;
+  const textContent = textAnnotations.map(a => a.text).join('\n');
+  api.addToMultiShot({ dataUrl, hasText, textContent });
+}
+
+// 完成按钮：加入多图浮窗（主进程负责复制剪贴板 + 系统通知）+ 关闭截图窗口
+async function confirmAndContinue() {
+  const dataUrl = exportAnnotatedImage();
+  const textAnnotations = state.annotations.filter(a => a.type === 'text');
+  const hasText = textAnnotations.length > 0;
+  const textContent = textAnnotations.map(a => a.text).join('\n');
+
+  if (_editMode && _editIndex >= 0) {
+    // 编辑模式：替换原图
+    api.replaceInMultiShot({ index: _editIndex, dataUrl, hasText, textContent });
+    _editMode = false;
+    _editIndex = -1;
+  } else {
+    // 正常模式：添加到多图
+    api.addToMultiShot({ dataUrl, hasText, textContent });
+  }
+  api.cancel();
 }
 
 function cancelScreenshot() {
   api.cancel();
 }
+
+// 多图添加成功回调：显示提示
+api.onMultiShotAccepted((data) => {
+  showToast(`已加入多图 (${data.count}/${data.max})`);
+});
+
+// 多图添加被拒绝回调
+api.onMultiShotRejected((reason) => {
+  if (reason === 'limit') showToast('多图已达上限');
+});
 
 // ============ Bug Form ============
 const FALLBACK_USERS = [
@@ -653,107 +920,30 @@ const FALLBACK_USERS = [
 ];
 
 async function loadUsers() {
-  try {
-    const response = await api.getUsers();
-    if (response.code === 0 && response.data && response.data.length > 0) {
-      state.users = response.data;
-    } else {
-      state.users = FALLBACK_USERS;
-    }
-  } catch (e) {
-    console.error('Failed to load users, using fallback:', e);
-    state.users = FALLBACK_USERS;
-  }
-  populateUserSelects();
+  // DMP 模式不再需要本地用户列表
+  state.users = [];
 }
 
 function populateUserSelects() {
-  const reporter = document.getElementById('bugReporter');
-  const assignee = document.getElementById('bugAssignee');
-
-  reporter.innerHTML = '';
-  assignee.innerHTML = '<option value="">-- 请选择 --</option>';
-
-  for (const user of state.users) {
-    const opt1 = document.createElement('option');
-    opt1.value = user.id;
-    opt1.textContent = user.display_name;
-    reporter.appendChild(opt1);
-
-    const opt2 = document.createElement('option');
-    opt2.value = user.id;
-    opt2.textContent = `${user.display_name} (${user.role === 'developer' ? '开发' : user.role === 'admin' ? '管理员' : '测试'})`;
-    assignee.appendChild(opt2);
-  }
-
-  // Default to first user
-  if (state.users.length > 0) {
-    reporter.value = state.users[0].id;
-  }
+  // 已废弃：不再使用本地用户选择器
 }
 
 async function loadInspectionTasks() {
-  try {
-    const response = await api.getInspectionTasks();
-    if (response.code === 0 && Array.isArray(response.data)) {
-      state.inspectionTasks = response.data;
-    }
-  } catch (e) {
-    console.error('Failed to load inspection tasks:', e);
-  }
-  populateInspectionTaskSelect();
+  // DMP 模式不再需要本地走查项目
+  state.inspectionTasks = [];
 }
 
 async function loadFunctionModules() {
-  try {
-    const response = await api.getFunctionModules();
-    if (response.code === 0 && Array.isArray(response.data)) {
-      state.modules = response.data;
-    }
-  } catch (e) {
-    console.error('Failed to load function modules:', e);
-  }
-  populateModuleSelect();
+  // DMP 模式不再需要本地功能模块
+  state.modules = [];
 }
 
 function populateInspectionTaskSelect() {
-  const select = document.getElementById('bugInspectionTask');
-  select.innerHTML = '<option value="">-- 不关联 --</option>';
-  for (const task of state.inspectionTasks) {
-    const opt = document.createElement('option');
-    opt.value = task.id;
-    opt.textContent = task.name;
-    select.appendChild(opt);
-  }
-
-  // 选择走查项目时自动填充默认接收人和环境路径
-  select.addEventListener('change', () => {
-    const taskId = parseInt(select.value);
-    const task = state.inspectionTasks.find(t => t.id === taskId);
-    if (task) {
-      if (task.default_assignee_id) {
-        const assigneeSelect = document.getElementById('bugAssignee');
-        assigneeSelect.value = task.default_assignee_id;
-      }
-      if (task.default_env_url) {
-        const envUrlInput = document.getElementById('bugEnvUrl');
-        if (!envUrlInput.value) {
-          envUrlInput.value = task.default_env_url;
-        }
-      }
-    }
-  });
+  // 已废弃
 }
 
 function populateModuleSelect() {
-  const select = document.getElementById('bugModule');
-  select.innerHTML = '<option value="">-- 不关联 --</option>';
-  for (const module of state.modules) {
-    const opt = document.createElement('option');
-    opt.value = module.id;
-    opt.textContent = module.name;
-    select.appendChild(opt);
-  }
+  // 已废弃
 }
 
 // BUG 弹窗内标注状态
@@ -806,21 +996,105 @@ function showBugForm() {
   // Set default title with timestamp
   const now = new Date();
   const timeStr = now.toLocaleString('zh-CN', { hour12: false });
-  document.getElementById('bugTitle').value = `BUG截图 - ${timeStr}`;
+  document.getElementById('bugTitle').value = `DMP缺陷 - ${timeStr}`;
   document.getElementById('bugDescription').value = '';
-  document.getElementById('bugEnvUrl').value = '';
-  document.getElementById('bugInspectionTask').value = '';
-  document.getElementById('bugModule').value = '';
-  document.getElementById('bugReproductionSteps').value = '';
   document.getElementById('submitStatus').classList.add('hidden');
 
+  // 重置 DMP 连接检查面板
+  resetDmpConnectionPanel();
+
+  // 加载上次保存的 DMP 默认值
+  loadDmpFormDefaults();
+  // 根据默认缺陷类型更新「关联故事」必填状态
+  updateStoryRequired();
+
   bugFormOverlay.classList.remove('hidden');
+  bugFormOverlay.classList.add('form-mode');
   // 打开录入弹窗时，通知主进程将安全超时延长到 10 分钟，防止填写途中窗口被关闭
   api.extendTimeout();
   // 降低窗口层级，让输入法候选框能正常显示
   api.setWindowLevel('normal');
-  document.getElementById('bugTitle').focus();
+  // 转换为普通可拖动窗口
+  api.enterFormMode();
 }
+
+// DMP 连接检查
+let dmpConnected = false;
+
+function resetDmpConnectionPanel() {
+  dmpConnected = false;
+  document.getElementById('dmpConnectIcon').textContent = '🔴';
+  document.getElementById('dmpConnectText').textContent = '未连接 DMP';
+  document.getElementById('dmpFormContent').classList.add('hidden');
+  document.getElementById('btnBugSubmit').disabled = true;
+  document.getElementById('dmpConnectMsg').classList.add('hidden');
+}
+
+function setDmpConnected(connected, message) {
+  dmpConnected = connected;
+  const icon = document.getElementById('dmpConnectIcon');
+  const text = document.getElementById('dmpConnectText');
+  const formContent = document.getElementById('dmpFormContent');
+  const submitBtn = document.getElementById('btnBugSubmit');
+  const msgEl = document.getElementById('dmpConnectMsg');
+
+  if (connected) {
+    icon.textContent = '🟢';
+    text.textContent = 'DMP 连接正常';
+    formContent.classList.remove('hidden');
+    submitBtn.disabled = false;
+    msgEl.textContent = message || '连接成功，请填写下方缺陷信息';
+    msgEl.className = 'submit-status success';
+  } else {
+    icon.textContent = '🔴';
+    text.textContent = '未连接 DMP';
+    formContent.classList.add('hidden');
+    submitBtn.disabled = true;
+    msgEl.textContent = message || '连接失败';
+    msgEl.className = 'submit-status error';
+  }
+  msgEl.classList.remove('hidden');
+}
+
+document.getElementById('btnDmpLaunch').addEventListener('click', async () => {
+  const btn = document.getElementById('btnDmpLaunch');
+  btn.disabled = true;
+  btn.textContent = '正在打开...';
+  try {
+    const result = await api.launchDmpBrowser();
+    if (!result.success) {
+      alert(result.message || '打开 DMP 失败');
+      return;
+    }
+    // 打开浏览器后，退出截图蒙层状态，避免遮挡浏览器窗口
+    overlay.classList.add('hidden');
+    toolbar.classList.add('hidden');
+    document.body.style.cursor = 'default';
+    api.setWindowLevel('normal');
+  } catch (e) {
+    console.error('打开 DMP 失败', e);
+    alert('打开 DMP 失败：' + (e.message || '未知错误'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '打开 DMP 并登录';
+  }
+});
+
+document.getElementById('btnDmpTest').addEventListener('click', async () => {
+  const btn = document.getElementById('btnDmpTest');
+  btn.disabled = true;
+  btn.textContent = '测试中...';
+  try {
+    const result = await api.testDmpConnection();
+    setDmpConnected(result.success, result.message);
+  } catch (e) {
+    console.error('链接测试失败', e);
+    setDmpConnected(false, '链接测试失败：' + (e.message || '未知错误'));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '链接测试';
+  }
+});
 
 function updateBugFormToolbarUI() {
   document.querySelectorAll('.bug-form-preview-toolbar .tool-btn').forEach(b => b.classList.remove('active'));
@@ -1025,33 +1299,58 @@ document.getElementById('btnBugClear').addEventListener('click', () => {
 
 document.getElementById('btnBugCancel').addEventListener('click', () => {
   bugFormOverlay.classList.add('hidden');
+  bugFormOverlay.classList.remove('form-mode');
+  api.exitFormMode();
   api.setWindowLevel('screen-saver');
   api.cancel();
 });
 
 document.getElementById('btnBugSubmit').addEventListener('click', async () => {
+  if (!dmpConnected) {
+    alert('请先通过「链接测试」确认 DMP 已连接');
+    return;
+  }
+  await submitDmp('auto');
+});
+
+document.getElementById('btnDmpManualSubmit').addEventListener('click', async () => {
+  await submitDmp('manual');
+});
+
+async function submitDmp(mode) {
   const title = document.getElementById('bugTitle').value.trim();
-  const bugType = document.getElementById('bugType').value;
-  const priorityEl = document.getElementById('bugPriority');
-  const priority = priorityEl ? priorityEl.value : 'medium';
-  const reporterId = parseInt(document.getElementById('bugReporter').value);
-  const assigneeId = document.getElementById('bugAssignee').value;
   const description = document.getElementById('bugDescription').value.trim();
-  const envUrl = document.getElementById('bugEnvUrl').value.trim();
-  const inspectionTaskId = document.getElementById('bugInspectionTask').value;
-  const moduleId = document.getElementById('bugModule').value;
-  const reproductionSteps = document.getElementById('bugReproductionSteps').value.trim();
+
+  // DMP 表单字段
+  const dmpProjectName = document.getElementById('dmpProjectName').value.trim();
+  const dmpModulePath = document.getElementById('dmpModulePath').value.trim();
+  const dmpDefectType = document.getElementById('dmpDefectType').value;
+  const dmpDiscoveryStage = document.getElementById('dmpDiscoveryStage').value;
+  const dmpPriority = document.getElementById('dmpPriority').value;
+  const dmpTestEnv = document.getElementById('dmpTestEnv').value.trim();
+  const dmpSource = document.getElementById('dmpSource').value;
+  const dmpStoryValue = document.getElementById('dmpStoryValue').value.trim();
+  const dmpHandlerId = document.getElementById('dmpHandlerId').value.trim();
+  const dmpNoteExtra = document.getElementById('dmpNoteExtra').value.trim();
+
+  const isInteraction = dmpDefectType === '交互体验';
 
   if (!title) {
     alert('请填写标题');
     return;
   }
-  if (!reporterId) {
-    alert('请选择录入人');
+  // 自动模式校验 DMP 必填字段；手动模式跳过
+  if (mode === 'auto' && (!dmpProjectName || !dmpModulePath || !dmpTestEnv || (!isInteraction && !dmpStoryValue) || !dmpHandlerId)) {
+    const storyHint = isInteraction ? '' : '、关联故事';
+    alert(`请填写 DMP 必填信息（项目名称、模块路径、测试环境${storyHint}、处理人工号）`);
     return;
   }
 
-  const submitBtn = document.getElementById('btnBugSubmit');
+  // 保存 DMP 默认值，下次自动填充
+  saveDmpFormDefaults();
+
+  const submitBtn = document.getElementById(mode === 'manual' ? 'btnDmpManualSubmit' : 'btnBugSubmit');
+  const originalText = submitBtn.textContent;
   submitBtn.disabled = true;
   submitBtn.textContent = '提交中...';
 
@@ -1063,15 +1362,20 @@ document.getElementById('btnBugSubmit').addEventListener('click', async () => {
     const result = await api.submitBug({
       title,
       description,
-      bug_type: bugType,
-      priority,
-      reporter_id: reporterId,
-      assignee_id: assigneeId ? parseInt(assigneeId) : reporterId,
-      env_url: envUrl,
-      inspection_task_id: inspectionTaskId ? parseInt(inspectionTaskId) : null,
-      module_id: moduleId ? parseInt(moduleId) : null,
-      reproduction_steps: reproductionSteps,
       imageDataUrl: dataUrl,
+      mode,
+      dmpForm: {
+        project_name: dmpProjectName,
+        module_path: dmpModulePath,
+        defect_type: dmpDefectType,
+        discovery_stage: dmpDiscoveryStage,
+        priority: dmpPriority,
+        source: dmpSource,
+        test_env: dmpTestEnv,
+        story_value: dmpStoryValue,
+        handler_id: dmpHandlerId,
+        note_extra: dmpNoteExtra,
+      },
     });
 
     if (result.success) {
@@ -1089,21 +1393,75 @@ document.getElementById('btnBugSubmit').addEventListener('click', async () => {
       statusEl.classList.remove('hidden');
     }
   } catch (e) {
-    statusEl.textContent = '网络错误，请检查后端服务是否启动';
+    statusEl.textContent = '提交失败：' + (e.message || '网络错误');
     statusEl.className = 'submit-status error';
     statusEl.classList.remove('hidden');
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = '提交';
+    submitBtn.textContent = originalText;
   }
-});
+}
 
-// ============ Keyboard Shortcuts ============
+// DMP 表单默认值记忆
+async function saveDmpFormDefaults() {
+  try {
+    await api.saveDmpFormDefaults({
+      project_name: document.getElementById('dmpProjectName').value.trim(),
+      module_path: document.getElementById('dmpModulePath').value.trim(),
+      defect_type: document.getElementById('dmpDefectType').value,
+      discovery_stage: document.getElementById('dmpDiscoveryStage').value,
+      priority: document.getElementById('dmpPriority').value,
+      source: document.getElementById('dmpSource').value,
+      test_env: document.getElementById('dmpTestEnv').value.trim(),
+      story_value: document.getElementById('dmpStoryValue').value.trim(),
+      handler_id: document.getElementById('dmpHandlerId').value.trim(),
+      note_extra: document.getElementById('dmpNoteExtra').value.trim(),
+    });
+  } catch (e) {
+    console.error('保存 DMP 默认值失败', e);
+  }
+}
+
+async function loadDmpFormDefaults() {
+  try {
+    const res = await api.loadDmpFormDefaults();
+    if (res && res.success && res.data) {
+      const d = res.data;
+      if (d.project_name) document.getElementById('dmpProjectName').value = d.project_name;
+      if (d.module_path) document.getElementById('dmpModulePath').value = d.module_path;
+      if (d.defect_type) document.getElementById('dmpDefectType').value = d.defect_type;
+      if (d.discovery_stage) document.getElementById('dmpDiscoveryStage').value = d.discovery_stage;
+      if (d.priority) document.getElementById('dmpPriority').value = d.priority;
+      if (d.source) document.getElementById('dmpSource').value = d.source;
+      if (d.test_env) document.getElementById('dmpTestEnv').value = d.test_env;
+      if (d.story_value) document.getElementById('dmpStoryValue').value = d.story_value;
+      if (d.handler_id) document.getElementById('dmpHandlerId').value = d.handler_id;
+      if (d.note_extra) document.getElementById('dmpNoteExtra').value = d.note_extra;
+    }
+  } catch (e) {
+    console.error('加载 DMP 默认值失败', e);
+  }
+}
+
+// 根据缺陷类型动态调整「关联故事」是否必填
+function updateStoryRequired() {
+  const defectType = document.getElementById('dmpDefectType').value;
+  const label = document.getElementById('dmpStoryLabel');
+  if (defectType === '交互体验') {
+    label.innerHTML = '关联故事';
+  } else {
+    label.innerHTML = '关联故事 <span class="required">*</span>';
+  }
+}
+
+document.getElementById('dmpDefectType').addEventListener('change', updateStoryRequired);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!bugFormOverlay.classList.contains('hidden')) {
       // 关闭弹窗，回到截图标注界面
       bugFormOverlay.classList.add('hidden');
+      bugFormOverlay.classList.remove('form-mode');
+      api.exitFormMode();
       overlay.classList.remove('hidden');
       toolbar.classList.remove('hidden');
       document.body.style.cursor = 'crosshair';

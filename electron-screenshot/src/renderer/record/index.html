@@ -23,71 +23,7 @@
     <div id="resultActions">
       <span id="resultStatus" class="status"></span>
       <button id="btnSave" class="act-btn">保存到桌面</button>
-      <button id="btnBug" class="act-btn primary">录入 BUG</button>
       <button id="btnDiscard" class="act-btn">放弃</button>
-    </div>
-  </div>
-
-  <!-- BUG 录入弹窗 -->
-  <div id="bugFormOverlay" class="bug-form-overlay hidden">
-    <div class="bug-form-container">
-      <h3>录入 BUG（含录屏）</h3>
-      <div class="bug-form-content">
-        <div class="form-group">
-          <label>标题 <span class="required">*</span></label>
-          <input type="text" id="bugTitle" placeholder="请输入 BUG 标题">
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>类型 <span class="required">*</span></label>
-            <select id="bugType">
-              <option value="ui">UI 缺陷</option>
-              <option value="functional">功能缺陷</option>
-              <option value="performance">性能问题</option>
-              <option value="security">安全问题</option>
-              <option value="other">其他</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>优先级</label>
-            <select id="bugPriority">
-              <option value="critical">紧急</option>
-              <option value="high">高</option>
-              <option value="medium" selected>中</option>
-              <option value="low">低</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>录入人 <span class="required">*</span></label>
-            <select id="bugReporter"></select>
-          </div>
-          <div class="form-group">
-            <label>接收人</label>
-            <select id="bugAssignee"><option value="">-- 请选择 --</option></select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>走查项目</label>
-            <select id="bugInspectionTask"><option value="">-- 不关联 --</option></select>
-          </div>
-          <div class="form-group">
-            <label>功能模块</label>
-            <select id="bugModule"><option value="">-- 不关联 --</option></select>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>BUG 描述</label>
-          <textarea id="bugDescription" rows="2" placeholder="描述 BUG 现象..."></textarea>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button id="btnBugCancel" class="btn-secondary">取消</button>
-        <button id="btnBugSubmit" class="btn-primary">提交 BUG</button>
-      </div>
-      <div id="submitStatus" class="submit-status hidden"></div>
     </div>
   </div>
 

@@ -2,11 +2,13 @@ import { BrowserWindow, screen } from 'electron';
 import * as path from 'path';
 
 // ============================================================
-// 多图状态管理 — 主进程内存中的图片集合（最多 5 张）
+// 多图状态管理 — 主进程内存中的图片集合（最多 10 张）
 // ============================================================
 
-const MAX_IMAGES = 5;
-let images: string[] = []; // base64 PNG dataURL 数组
+const MAX_IMAGES = 10;
+let images: string[] = [];
+let imageTextInfo: { hasText: boolean; textContent: string }[] = [];
+let selectedIndices: number[] = [];
 
 let stackWindow: BrowserWindow | null = null;
 let combineWindow: BrowserWindow | null = null;
@@ -23,23 +25,59 @@ export function getImages(): string[] {
   return images.slice();
 }
 
-export function addImage(dataUrl: string): { ok: boolean; count: number; reason?: string } {
+export function getTextInfo(): { hasText: boolean; textContent: string }[] {
+  return imageTextInfo.slice();
+}
+
+export function addImage(
+  dataUrl: string,
+  hasText = false,
+  textContent = ''
+): { ok: boolean; count: number; reason?: string } {
   if (images.length >= MAX_IMAGES) {
     return { ok: false, count: images.length, reason: 'limit' };
   }
   images.push(dataUrl);
+  imageTextInfo.push({ hasText, textContent });
   return { ok: true, count: images.length };
 }
 
 export function removeImage(index: number): number {
   if (index >= 0 && index < images.length) {
     images.splice(index, 1);
+    imageTextInfo.splice(index, 1);
+    selectedIndices = selectedIndices
+      .filter(i => i !== index)
+      .map(i => (i > index ? i - 1 : i));
   }
   return images.length;
 }
 
 export function clearImages(): void {
   images = [];
+  imageTextInfo = [];
+  selectedIndices = [];
+}
+
+export function setCombineSelected(indices: number[]): void {
+  selectedIndices = [...indices];
+}
+
+export function getCombineSelected(): number[] {
+  return selectedIndices.slice();
+}
+
+export function getSelectedImageDataUrls(): string[] {
+  return selectedIndices
+    .filter(i => i >= 0 && i < images.length)
+    .map(i => images[i]);
+}
+
+export function replaceImage(index: number, dataUrl: string, hasText = false, textContent = ''): boolean {
+  if (index < 0 || index >= images.length) return false;
+  images[index] = dataUrl;
+  imageTextInfo[index] = { hasText, textContent };
+  return true;
 }
 
 // ============================================================
@@ -56,8 +94,8 @@ export function showStackWindow(): void {
 
   const primary = screen.getPrimaryDisplay();
   const { width: areaW, height: areaH, x: areaX, y: areaY } = primary.workArea;
-  const winW = 190;
-  const winH = 300;
+  const winW = 230;
+  const winH = 420;
   // 定位到工作区右下角，留 16px 边距
   const x = areaX + areaW - winW - 16;
   const y = areaY + areaH - winH - 16;
@@ -101,7 +139,7 @@ export function showStackWindow(): void {
 
 export function updateStackWindow(): void {
   if (stackWindow && !stackWindow.isDestroyed()) {
-    stackWindow.webContents.send('multishot:list-updated', images);
+    stackWindow.webContents.send('multishot:list-updated', images, imageTextInfo);
   }
 }
 

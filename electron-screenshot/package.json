@@ -4,18 +4,58 @@
   "description": "BUG截图工具 - 快捷键截图+标注+录入BUG",
   "main": "dist/main/index.js",
   "scripts": {
-    "copy-renderer": "mkdir -p dist/renderer/viewer dist/renderer/shared dist/renderer/stack dist/renderer/combine dist/renderer/record dist/assets && cp src/renderer/index.html src/renderer/screenshot.js src/renderer/style.css src/renderer/img-preview.html dist/renderer/ && cp src/renderer/viewer/index.html src/renderer/viewer/viewer.js src/renderer/viewer/viewer.css dist/renderer/viewer/ && cp src/renderer/shared/*.js dist/renderer/shared/ && (cp src/renderer/stack/* dist/renderer/stack/ 2>/dev/null || true) && (cp src/renderer/combine/* dist/renderer/combine/ 2>/dev/null || true) && (cp src/renderer/record/* dist/renderer/record/ 2>/dev/null || true) && cp src/assets/tray-icon.png src/assets/tray-icon@2x.png dist/assets/",
+    "copy-renderer": "mkdir -p dist/renderer/viewer dist/renderer/shared dist/renderer/stack dist/renderer/combine dist/renderer/record dist/scripts dist/assets && cp src/renderer/index.html src/renderer/screenshot.js src/renderer/style.css src/renderer/img-preview.html dist/renderer/ && cp src/renderer/viewer/index.html src/renderer/viewer/viewer.js src/renderer/viewer/viewer.css dist/renderer/viewer/ && cp src/renderer/shared/*.js dist/renderer/shared/ && (cp src/renderer/stack/* dist/renderer/stack/ 2>/dev/null || true) && (cp src/renderer/combine/* dist/renderer/combine/ 2>/dev/null || true) && (cp src/renderer/record/* dist/renderer/record/ 2>/dev/null || true) && cp src/scripts/*.mjs dist/scripts/ && cp src/assets/tray-icon.png src/assets/tray-icon@2x.png dist/assets/",
     "dev": "tsc && npm run copy-renderer && electron .",
     "build": "tsc && npm run copy-renderer",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --mac --arm64"
   },
   "dependencies": {
     "axios": "^1.6.0",
-    "electron": "^28.0.0",
     "ffmpeg-static": "^5.2.0"
   },
   "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3",
     "typescript": "^5.3.0",
     "@types/node": "^20.10.0"
+  },
+  "build": {
+    "appId": "com.bugtool.app",
+    "productName": "BUG工具",
+    "directories": {
+      "output": "../dist-app"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/ffmpeg-static/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../server/dist/bugtool-server",
+        "to": "backend"
+      },
+      {
+        "from": "../web/dist",
+        "to": "web-dist"
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "需要屏幕录制权限以进行截图和录屏"
+      }
+    }
   }
 }

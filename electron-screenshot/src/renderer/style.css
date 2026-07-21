@@ -139,6 +139,78 @@ body {
   padding: 4px 8px;
 }
 
+.confirm-btn {
+  color: #fff !important;
+  background: linear-gradient(135deg, #22c55e, #16a34a) !important;
+  font-size: 14px;
+  padding: 4px 9px;
+  border-radius: 7px;
+}
+
+.confirm-btn:hover {
+  background: linear-gradient(135deg, #16a34a, #15803d) !important;
+  color: #fff !important;
+}
+
+.record-btn {
+  color: #475569;
+  background: #f1f5f9;
+  font-weight: 600;
+  padding: 5px 12px;
+  font-size: 13px;
+  border-radius: 7px;
+  border: 1px solid #e2e8f0;
+}
+
+.record-btn:hover {
+  background: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+/* ============ 工具栏自定义 Tooltip ============ */
+.tool-btn[title],
+.rec-btn[title],
+.combine-btn[title],
+.cancel-btn[title],
+.confirm-btn[title],
+.record-btn[title] {
+  position: relative;
+}
+
+.tool-btn[title]::after,
+.rec-btn[title]::after,
+.combine-btn[title]::after,
+.cancel-btn[title]::after,
+.confirm-btn[title]::after,
+.record-btn[title]::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.88);
+  color: #f1f5f9;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease 0.4s;
+  z-index: 9999;
+  letter-spacing: 0.2px;
+}
+
+.tool-btn[title]:hover::after,
+.rec-btn[title]:hover::after,
+.combine-btn[title]:hover::after,
+.cancel-btn[title]:hover::after,
+.confirm-btn[title]:hover::after,
+.record-btn[title]:hover::after {
+  opacity: 1;
+}
+
 .cancel-btn:hover {
   color: #ef4444;
   background: #fff0f0;
@@ -189,8 +261,16 @@ body {
   backdrop-filter: blur(8px);
 }
 
+.bug-form-overlay.form-mode {
+  background: transparent;
+  backdrop-filter: none;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
 .bug-form-container {
   display: flex;
+  flex-direction: column;
   background: #fff;
   border-radius: 14px;
   width: 88vw;
@@ -202,7 +282,47 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-/* 左侧：预览区域 */
+.bug-form-overlay.form-mode .bug-form-container {
+  width: 1050px;
+  height: 640px;
+  max-width: none;
+  max-height: none;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+.bug-form-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.window-drag-bar {
+  display: none;
+}
+
+.bug-form-overlay.form-mode .window-drag-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  background: #f8f9fb;
+  border-bottom: 1px solid #eaecf0;
+  -webkit-app-region: drag;
+  cursor: default;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.window-drag-bar::before {
+  content: '';
+  width: 36px;
+  height: 4px;
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+/* 左侧：截图预览区域 */
 .bug-form-preview {
   flex: 1;
   display: flex;
@@ -462,6 +582,43 @@ body {
   background: #fff1f2;
   color: #dc2626;
   border: 1px solid #fecaca;
+}
+
+/* DMP 连接检查面板 */
+.dmp-connect-panel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 16px 22px;
+}
+
+.dmp-connect-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.dmp-connect-tip {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.dmp-connect-actions {
+  padding: 0;
+  border: none;
+  background: transparent;
+  justify-content: flex-start;
+}
+
+.dmp-connect-actions .btn-secondary {
+  background: #fff;
 }
 
 /* ========== Toast ========== */

@@ -121,7 +121,44 @@ cd server && python3 seed_data.py
 ```
 注意：如果数据库中已有数据，脚本会自动跳过，不会重复写入。
 
-## 项目结构
+## 打包为独立应用（推荐分发方式）
+
+将工具打包成独立的 macOS 应用后，**最终用户无需安装 Node.js、Python 或任何依赖**，双击即用。
+
+### 打包（开发者操作，需 Apple Silicon 机器）
+
+```bash
+# 一键打包（构建 Web + 打包后端 + 构建 Electron + 出 dmg）
+./build-app.sh
+```
+
+产物：`dist-app/BUG工具-<版本>-arm64.dmg`（当前仅支持 Apple 芯片 / arm64）。
+
+打包依赖：开发机需有 Node.js、Python3、PyInstaller（脚本会自动安装 PyInstaller）。
+
+### 最终用户安装与首次打开
+
+1. 双击 `.dmg`，把「BUG工具」拖入「应用程序」文件夹
+2. 首次打开（未签名应用，需绕过 Gatekeeper）：
+   - **右键点击**「BUG工具」→ 选择「打开」→ 在弹窗中再点「打开」
+   - 若提示"已损坏或无法验证"，在终端执行：
+     ```bash
+     xattr -cr /Applications/BUG工具.app
+     ```
+3. 首次截图/录屏时授予**屏幕录制权限**：系统设置 → 隐私与安全性 → 屏幕录制 → 勾选 BUG工具
+4. 打开后无需做任何配置，应用会自动启动内置后端服务
+
+### 数据存储位置
+
+打包应用的数据库与上传文件存放在：
+```
+~/Library/Application Support/bug-screenshot-tool/
+├── bug_tool.db        # 数据库
+└── uploads/           # 截图/录屏文件
+```
+更新或重装应用不会影响这些数据。
+
+
 
 ```
 bugTool/

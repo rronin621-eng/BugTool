@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import os
 from config import CORS_ORIGINS, UPLOAD_DIR
 from database import init_db
 from routers import users, bugs, uploads
@@ -33,11 +34,16 @@ async def startup():
     await init_db()
 
 
-@app.get("/")
-async def root():
-    return {"message": "BUG录入系统 API", "version": "1.0.0"}
-
-
 @app.get("/api/v1/health")
 async def health_check():
     return {"status": "ok"}
+
+
+# WEB 管理端静态托管（打包模式）：放在所有 API 路由之后挂载，避免覆盖 /api、/uploads
+WEB_DIST = os.environ.get("BUGTOOL_WEB_DIST")
+if WEB_DIST and os.path.isdir(WEB_DIST):
+    app.mount("/", StaticFiles(directory=WEB_DIST, html=True), name="web")
+else:
+    @app.get("/")
+    async def root():
+        return {"message": "BUG录入系统 API", "version": "1.0.0"}

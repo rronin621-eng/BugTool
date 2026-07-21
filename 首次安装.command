@@ -12,6 +12,19 @@ echo "  BUG工具 — 环境初始化"
 echo "=========================================="
 echo ""
 
+# 补充 Node.js 常见安装位置到 PATH（双击启动时 PATH 精简）
+[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null
+[ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile" 2>/dev/null
+[ -s "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh" 2>/dev/null
+for d in "/usr/local/bin" "/opt/homebrew/bin" "$HOME/.local/node/bin" "$HOME/.volta/bin" "/usr/local/opt/node/bin"; do
+  [ -d "$d" ] && PATH="$d:$PATH"
+done
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  latest="$(ls -1 "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)"
+  [ -n "$latest" ] && PATH="$HOME/.nvm/versions/node/$latest/bin:$PATH"
+fi
+export PATH
+
 # 修复所有脚本的执行权限
 echo "[1/5] 修复文件权限..."
 chmod +x "$ROOT/启动BUG工具.command" 2>/dev/null

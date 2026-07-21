@@ -155,7 +155,7 @@ body {
 .act-btn:hover { background: #f0f0f0; }
 
 .act-btn.primary {
-  background: linear-gradient(135deg, #f87171, #ef4444);
+  background: linear-gradient(135deg, #f59e0b, #f97316);
   color: #fff;
   border-color: transparent;
 }

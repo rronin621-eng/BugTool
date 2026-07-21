@@ -1,10 +1,16 @@
-import { ipcMain, clipboard, nativeImage, BrowserWindow, Notification } from 'electron';
+import { ipcMain, clipboard, nativeImage, BrowserWindow, Notification, app, screen } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import * as http from 'http';
+import { destroyAllScreenshotWindows, unregisterScreenshotWindow, registerScreenshotWindow } from './screenshot-registry';
+import { submitBugToDmp, DmpSubmitData } from './dmp-submitter';
+import { getDmpConfig } from './dmp-config';
+import { getDmpBrowserConfig } from './dmp-browser-config';
+import { submitBugViaBrowser, DmpBrowserSubmitData, launchDmpBrowser, testDmpConnection } from './dmp-browser-runner';
 import {
   addImage, removeImage, getImages, clearImages, getCount, getMaxImages,
+  getTextInfo, setCombineSelected, getSelectedImageDataUrls, replaceImage,
   showStackWindow, updateStackWindow, closeStackWindow,
   openCombineWindow, closeCombineWindow, setCombineAlwaysOnTop,
 } from './multishot';
@@ -13,7 +19,11 @@ import {
   getPendingRegion, getPrimaryScreenSource,
 } from './record-window';
 import { execFile } from 'child_process';
-const ffmpegPath: string = require('ffmpeg-static');
+let ffmpegPath: string = require('ffmpeg-static');
+// 打包后 ffmpeg-static 二进制位于 asar.unpacked，需将路径中的 app.asar 替换
+if (app.isPackaged && ffmpegPath) {
+  ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+}
 
 let apiBase = 'http://localhost:8000/api/v1';
 
@@ -21,51 +31,70 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   apiBase = apiBaseUrl;
 
   // Remove existing handlers to avoid "handler already registered" error
-  ipcMain.removeHandler('screenshot:copy');
-  ipcMain.removeHandler('screenshot:save');
-  ipcMain.removeHandler('bug:submit');
-  ipcMain.removeHandler('users:list');
-  ipcMain.removeHandler('tasks:list');
-  ipcMain.removeHandler('modules:list');
-  ipcMain.removeHandler('bugs:list');
-  ipcMain.removeHandler('bug:get');
-  ipcMain.removeHandler('bug:update-status');
-  ipcMain.removeHandler('bug:transfer');
-  ipcMain.removeHandler('bug:update-collaborators');
-  ipcMain.removeHandler('bug:accept');
-  ipcMain.removeHandler('image:preview');
-  ipcMain.removeHandler('multishot:get-list');
-  ipcMain.removeHandler('multishot:count');
-  ipcMain.removeHandler('combine:copy');
-  ipcMain.removeHandler('combine:save');
-  ipcMain.removeHandler('record:get-region');
-  ipcMain.removeHandler('record:get-screen-source');
-  ipcMain.removeHandler('record:save');
-  ipcMain.removeHandler('record:submit-bug');
+  const safeRemove = (channel: string) => {
+    try { ipcMain.removeHandler(channel); } catch {}
+  };
+  safeRemove('screenshot:copy');
+  safeRemove('screenshot:save');
+  safeRemove('bug:submit');
+  safeRemove('users:list');
+  safeRemove('tasks:list');
+  safeRemove('modules:list');
+  safeRemove('bugs:list');
+  safeRemove('bug:get');
+  safeRemove('bug:update-status');
+  safeRemove('bug:transfer');
+  safeRemove('bug:update-collaborators');
+  safeRemove('bug:accept');
+  safeRemove('image:preview');
+  safeRemove('multishot:get-list');
+  safeRemove('multishot:count');
+  safeRemove('multishot:copy-single');
+  safeRemove('multishot:copy-text');
+  safeRemove('multishot:preview');
+  safeRemove('multishot:edit');
+  safeRemove('combine:copy');
+  safeRemove('combine:save');
+  safeRemove('combine:get-list');
+  safeRemove('record:get-region');
+  safeRemove('record:get-screen-source');
+  safeRemove('record:save');
+  safeRemove('record:submit-bug');
+  safeRemove('dmp-browser:launch');
+  safeRemove('dmp-browser:test');
 
   // ============================================================
   // 多图功能 IPC
   // ============================================================
 
-  // 添加一张图到多图收集（来自截图窗口），关闭来源窗口，弹出/刷新小窗
-  ipcMain.on('multishot:add', (event, dataUrl: string) => {
-    const result = addImage(dataUrl);
+  // 添加一张图到多图收集（来自截图窗口），保持截图窗口不关闭，弹出/刷新小窗
+  ipcMain.on('multishot:add', (event, data: { dataUrl: string; hasText?: boolean; textContent?: string }) => {
+    const { dataUrl, hasText = false, textContent = '' } = data;
+    const result = addImage(dataUrl, hasText, textContent);
     if (result.ok) {
-      // 关闭来源截图窗口
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (win && !win.isDestroyed()) win.destroy();
+      // 并行：主进程写入剪贴板（更可靠）+ 系统通知
+      try {
+        const image = nativeImage.createFromDataURL(dataUrl);
+        clipboard.writeImage(image);
+      } catch {}
+      new Notification({ title: 'BUG截图工具', body: `已复制到剪贴板（${result.count}/${getMaxImages()}）` }).show();
       // 弹出或刷新暂存小窗
       showStackWindow();
       updateStackWindow();
+      event.sender.send('multishot:add-accepted', { count: result.count, max: getMaxImages() });
     } else {
       // 已达上限，通知来源窗口
       event.sender.send('multishot:add-rejected', result.reason);
     }
   });
 
-  // 查询当前图片列表
+  // 查询当前图片列表（含文字信息）
   ipcMain.handle('multishot:get-list', () => {
-    return { images: getImages(), max: getMaxImages() };
+    return {
+      images: getImages(),
+      textInfo: getTextInfo(),
+      max: getMaxImages(),
+    };
   });
 
   // 查询当前数量
@@ -84,13 +113,56 @@ export function setupIpcHandlers(apiBaseUrl: string) {
     }
   });
 
+  // 复制单张图片到剪贴板（不关闭窗口）
+  ipcMain.handle('multishot:copy-single', (_event, index: number) => {
+    const imgs = getImages();
+    if (index < 0 || index >= imgs.length) return { success: false };
+    try {
+      const image = nativeImage.createFromDataURL(imgs[index]);
+      clipboard.writeImage(image);
+      new Notification({ title: 'BUG截图工具', body: '图片已复制到剪贴板' }).show();
+      return { success: true };
+    } catch (err) {
+      console.error('[IPC] multishot:copy-single error:', err);
+      return { success: false };
+    }
+  });
+
+  // 复制图片中的文字到剪贴板
+  ipcMain.handle('multishot:copy-text', (_event, index: number) => {
+    const textInfoArr = getTextInfo();
+    if (index < 0 || index >= textInfoArr.length) return { success: false };
+    const info = textInfoArr[index];
+    if (!info.hasText || !info.textContent) return { success: false, message: '该图片无文字' };
+    try {
+      clipboard.writeText(info.textContent);
+      new Notification({ title: 'BUG截图工具', body: '文字已复制到剪贴板' }).show();
+      return { success: true };
+    } catch (err) {
+      console.error('[IPC] multishot:copy-text error:', err);
+      return { success: false };
+    }
+  });
+
+  // 设置选中要组合的图片索引
+  ipcMain.on('multishot:set-combine-selected', (_event, indices: number[]) => {
+    setCombineSelected(indices);
+  });
+
+  // 用选中的图片打开组合编辑器
+  ipcMain.on('multishot:combine-selected', () => {
+    const selected = getSelectedImageDataUrls();
+    if (selected.length < 2) return;
+    openCombineWindow();
+  });
+
   // 清空所有图片并关闭小窗
   ipcMain.on('multishot:clear', () => {
     clearImages();
     closeStackWindow();
   });
 
-  // 打开组合编辑器
+  // 打开组合编辑器（使用所有图片，向后兼容）
   ipcMain.on('multishot:open-combine', () => {
     if (getCount() === 0) return;
     openCombineWindow();
@@ -205,6 +277,15 @@ export function setupIpcHandlers(apiBaseUrl: string) {
     }
   });
 
+  // 组合编辑器获取图片列表（优先使用选中的子集）
+  ipcMain.handle('combine:get-list', () => {
+    const selected = getSelectedImageDataUrls();
+    if (selected.length >= 2) {
+      return { images: selected, max: getMaxImages() };
+    }
+    return { images: getImages(), max: getMaxImages() };
+  });
+
   // 组合图复制到剪贴板，完成后清空并关闭
   ipcMain.handle('combine:copy', (_event, dataUrl: string) => {
     try {
@@ -241,20 +322,36 @@ export function setupIpcHandlers(apiBaseUrl: string) {
 
 
   // Close screenshot window (use destroy for reliable cleanup)
+  // Also destroys all other screenshot overlay windows (multi-monitor support)
   ipcMain.on('screenshot:cancel', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    if (win) {
-      win.destroy();
+    if (win && !win.isDestroyed()) win.destroy();
+    // Destroy all remaining per-display screenshot windows
+    destroyAllScreenshotWindows();
+  });
+
+  // User started selecting on one display: keep only that window, close all others
+  ipcMain.on('screenshot:focus-display', (event) => {
+    const activeWin = BrowserWindow.fromWebContents(event.sender);
+    if (activeWin && !activeWin.isDestroyed()) {
+      // Temporarily unregister the active window so destroyAll won't touch it
+      unregisterScreenshotWindow(activeWin);
+      destroyAllScreenshotWindows();
+      // Re-register so future cancel/copy/save still closes it
+      registerScreenshotWindow(activeWin);
+    } else {
+      destroyAllScreenshotWindows();
     }
   });
 
-  // Copy image to clipboard, close window, show notification
+  // Copy image to clipboard, close ALL screenshot windows, show notification
   ipcMain.handle('screenshot:copy', (event, dataUrl: string) => {
     try {
       const image = nativeImage.createFromDataURL(dataUrl);
       clipboard.writeImage(image);
+      destroyAllScreenshotWindows();
       const win = BrowserWindow.fromWebContents(event.sender);
-      if (win) win.destroy();
+      if (win && !win.isDestroyed()) win.destroy();
       new Notification({ title: 'BUG截图工具', body: '已复制到剪贴板' }).show();
       return { success: true };
     } catch (err) {
@@ -263,7 +360,7 @@ export function setupIpcHandlers(apiBaseUrl: string) {
     }
   });
 
-  // Save screenshot to desktop, close window, show notification
+  // Save screenshot to desktop, close ALL screenshot windows, show notification
   ipcMain.handle('screenshot:save', (event, dataUrl: string, filename: string) => {
     try {
       const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
@@ -271,8 +368,9 @@ export function setupIpcHandlers(apiBaseUrl: string) {
       const desktopPath = require('os').homedir();
       const savePath = path.join(desktopPath, 'Desktop', filename);
       fs.writeFileSync(savePath, buffer);
+      destroyAllScreenshotWindows();
       const win = BrowserWindow.fromWebContents(event.sender);
-      if (win) win.destroy();
+      if (win && !win.isDestroyed()) win.destroy();
       new Notification({ title: 'BUG截图工具', body: `已保存到桌面：${filename}` }).show();
       return { success: true };
     } catch (err) {
@@ -346,6 +444,182 @@ export function setupIpcHandlers(apiBaseUrl: string) {
       return { success: true, bug_id: bugId, message: 'BUG录入成功' };
     } catch (err: any) {
       return { success: false, message: err.message || '提交失败' };
+    }
+  });
+
+  // Submit screenshot bug to local system AND optionally to Kingdee DMP
+  ipcMain.handle('bug:submit-with-dmp', async (_event, data: {
+    title: string;
+    description: string;
+    bug_type: string;
+    reporter_id: number;
+    assignee_id?: number;
+    env_url?: string;
+    inspection_task_id?: number;
+    module_id?: number;
+    reproduction_steps?: string;
+    reporter_name?: string;
+    assignee_name?: string;
+    imageDataUrl: string;
+  }) => {
+    const dmpConfig = getDmpConfig();
+    let localResult: { success: boolean; bug_id?: number; message: string } | null = null;
+    let dmpResult: { success: boolean; dmpBugId?: string | number; message: string } | null = null;
+
+    // 1) 本地系统录入（除非配置明确关闭）
+    if (dmpConfig.submitToLocal !== false) {
+      try {
+        const bugResponse = await httpRequest('POST', `${apiBase}/bugs`, {
+          title: data.title,
+          description: data.description,
+          bug_type: data.bug_type,
+          reporter_id: data.reporter_id,
+          assignee_id: data.assignee_id || null,
+          env_url: data.env_url || '',
+          inspection_task_id: data.inspection_task_id || null,
+          module_id: data.module_id || null,
+          reproduction_steps: data.reproduction_steps || '',
+        });
+
+        if (bugResponse.code === 0) {
+          const bugId = bugResponse.data.id;
+          const base64Data = data.imageDataUrl.replace(/^data:image\/png;base64,/, '');
+          const buffer = Buffer.from(base64Data, 'base64');
+          const tempDir = path.join(require('os').tmpdir(), 'bug-screenshot-tool');
+          if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+          const tempFile = path.join(tempDir, `screenshot_${Date.now()}.png`);
+          fs.writeFileSync(tempFile, buffer);
+          const uploadResult = await uploadFile(`${apiBase}/uploads/screenshot`, tempFile, bugId);
+          try { fs.unlinkSync(tempFile); } catch {}
+
+          BrowserWindow.getAllWindows().forEach((win) => {
+            if (!win.isDestroyed()) win.webContents.send('viewer:refresh');
+          });
+
+          localResult = {
+            success: true,
+            bug_id: bugId,
+            message: uploadResult.code === 0 ? '本地 BUG 录入成功' : '本地 BUG 已创建，截图上传失败',
+          };
+        } else {
+          localResult = { success: false, message: bugResponse.message || '本地创建 BUG 失败' };
+        }
+      } catch (err: any) {
+        localResult = { success: false, message: err.message || '本地提交失败' };
+      }
+    }
+
+    // 2) DMP 录入（如果启用）
+    if (dmpConfig.enabled && dmpConfig.apiUrl) {
+      try {
+        dmpResult = await submitBugToDmp({
+          title: data.title,
+          description: data.description,
+          bug_type: data.bug_type,
+          priority: undefined,
+          reporter_name: data.reporter_name,
+          assignee_name: data.assignee_name,
+          env_url: data.env_url,
+          imageDataUrl: data.imageDataUrl,
+        });
+      } catch (err: any) {
+        dmpResult = { success: false, message: err.message || 'DMP 提交异常' };
+      }
+    }
+
+    // 3) 汇总返回结果
+    if (dmpResult) {
+      if (dmpResult.success) {
+        return {
+          success: true,
+          message: localResult?.success
+            ? `本地 BUG #${localResult.bug_id} 录入成功，DMP #${dmpResult.dmpBugId} 录入成功`
+            : `DMP #${dmpResult.dmpBugId} 录入成功（本地：${localResult?.message || '未启用'}）`,
+        };
+      } else {
+        return {
+          success: localResult?.success ?? false,
+          message: `DMP 失败：${dmpResult.message}；本地：${localResult?.message || '未提交'}`,
+        };
+      }
+    }
+
+    // 没有 DMP 配置时，只返回本地结果
+    return localResult || { success: false, message: '未提交到任何系统' };
+  });
+
+  // Submit screenshot bug via DMP browser automation (bug-batch-dmp skill)
+  ipcMain.handle('bug:submit-dmp-browser', async (_event, data: {
+    title: string;
+    description?: string;
+    imageDataUrl: string;
+    dmpForm: any;
+    mode?: 'auto' | 'manual';
+  }) => {
+    // 仅提交到 DMP 浏览器自动化系统
+    let browserResult: { success: boolean; devopsId?: string; message: string } | null = null;
+    try {
+      browserResult = await submitBugViaBrowser({
+        title: data.title,
+        description: data.description,
+        imageDataUrl: data.imageDataUrl,
+        dmpForm: data.dmpForm,
+        mode: data.mode,
+      });
+    } catch (err: any) {
+      browserResult = { success: false, message: err.message || 'DMP 浏览器自动化异常' };
+    }
+
+    if (browserResult.success) {
+      return {
+        success: true,
+        message: `DMP 缺陷创建成功：${browserResult.devopsId || ''}`,
+      };
+    } else {
+      return {
+        success: false,
+        message: `DMP 创建失败：${browserResult.message}`,
+      };
+    }
+  });
+
+  // Launch Chrome and open DMP login page
+  ipcMain.handle('dmp-browser:launch', async () => {
+    try {
+      return await launchDmpBrowser();
+    } catch (err: any) {
+      return { success: false, message: err.message || '启动 DMP 浏览器失败' };
+    }
+  });
+
+  // Test DMP connection via CDP
+  ipcMain.handle('dmp-browser:test', async () => {
+    try {
+      return await testDmpConnection();
+    } catch (err: any) {
+      return { success: false, message: err.message || '链接测试失败' };
+    }
+  });
+
+  // Save/load DMP form defaults (so user does not need to edit config files)
+  const dmpDefaultsPath = path.join(require('os').homedir(), 'Library', 'Application Support', 'BUG工具', 'dmp-form-defaults.json');
+  ipcMain.handle('dmp-form:save-defaults', async (_event, data: Record<string, any>) => {
+    try {
+      const dir = path.dirname(dmpDefaultsPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(dmpDefaultsPath, JSON.stringify(data, null, 2));
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.message };
+    }
+  });
+  ipcMain.handle('dmp-form:load-defaults', async () => {
+    try {
+      if (!fs.existsSync(dmpDefaultsPath)) return { success: true, data: {} };
+      const raw = fs.readFileSync(dmpDefaultsPath, 'utf-8');
+      return { success: true, data: JSON.parse(raw) };
+    } catch (err: any) {
+      return { success: false, message: err.message, data: {} };
     }
   });
 
@@ -453,6 +727,88 @@ export function setupIpcHandlers(apiBaseUrl: string) {
     } catch (err: any) {
       return { code: 1, message: err.message, data: null };
     }
+  });
+
+  // 打开编辑窗口（复用截图标注页）
+  ipcMain.handle('multishot:edit', (_event, index: number) => {
+    const imgs = getImages();
+    if (index < 0 || index >= imgs.length) return;
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+    // 窗口大小为屏幕工作区的 70%，居中显示
+    const winW = Math.round(screenW * 0.7);
+    const winH = Math.round(screenH * 0.7);
+    const winX = Math.round((screenW - winW) / 2);
+    const winY = Math.round((screenH - winH) / 2);
+    const editWin = new BrowserWindow({
+      width: winW,
+      height: winH,
+      x: winX,
+      y: winY,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: true,
+      minimizable: false,
+      maximizable: false,
+      fullscreen: false,
+      hasShadow: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, '../preload/index.js'),
+      },
+    });
+    if (process.platform === 'darwin') {
+      editWin.setAlwaysOnTop(true, 'floating');
+    }
+    editWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    editWin.show();
+    const htmlPath = path.join(__dirname, '../renderer/index.html');
+    editWin.loadURL('file://' + encodeURI(htmlPath));
+    editWin.webContents.on('did-finish-load', () => {
+      editWin.webContents.send('edit:start', { editIndex: index, dataUrl: imgs[index] });
+    });
+  });
+
+  // 替换指定索引的图片
+  ipcMain.on('multishot:replace', (event, data: { index: number; dataUrl: string; hasText?: boolean; textContent?: string }) => {
+    const { index, dataUrl, hasText = false, textContent = '' } = data;
+    const ok = replaceImage(index, dataUrl, hasText, textContent);
+    if (ok) {
+      try {
+        const image = nativeImage.createFromDataURL(dataUrl);
+        clipboard.writeImage(image);
+      } catch {}
+      new Notification({ title: 'BUG截图工具', body: '图片已编辑并复制到剪贴板' }).show();
+      updateStackWindow();
+    }
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) win.destroy();
+  });
+
+  // 打开图片预览（根据暂存小窗索引）
+  ipcMain.handle('multishot:preview', (_event, index: number) => {
+    const imgs = getImages();
+    if (index < 0 || index >= imgs.length) return;
+    const { screen } = require('electron');
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    const previewWin = new BrowserWindow({
+      width,
+      height,
+      frame: false,
+      alwaysOnTop: true,
+      transparent: true,
+      backgroundColor: '#00000000',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    const htmlPath = path.join(__dirname, '../renderer/img-preview.html');
+    previewWin.loadURL('file://' + htmlPath + '?src=' + encodeURIComponent(imgs[index]));
   });
 
   // Open fullscreen image preview window

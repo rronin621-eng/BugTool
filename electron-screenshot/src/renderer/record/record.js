@@ -31,7 +31,6 @@ const elCtrlBar = document.getElementById('ctrlBar');
 const elResultPanel = document.getElementById('resultPanel');
 const elPreview = document.getElementById('preview');
 const elResultStatus = document.getElementById('resultStatus');
-const elBugFormOverlay = document.getElementById('bugFormOverlay');
 
 // ============ 初始化：打开即自动开始录制 ============
 (async function init() {
@@ -219,98 +218,3 @@ document.getElementById('btnSave').addEventListener('click', async () => {
   }
 });
 
-// ============ 录入 BUG ============
-const FALLBACK_USERS = [
-  { id: 1, display_name: '张三', role: 'tester' },
-  { id: 2, display_name: '李四', role: 'developer' },
-];
-let users = [];
-
-async function loadFormData() {
-  try {
-    const r = await api.getUsers();
-    users = (r.code === 0 && r.data && r.data.length) ? r.data : FALLBACK_USERS;
-  } catch { users = FALLBACK_USERS; }
-  const reporter = document.getElementById('bugReporter');
-  const assignee = document.getElementById('bugAssignee');
-  reporter.innerHTML = '';
-  assignee.innerHTML = '<option value="">-- 请选择 --</option>';
-  users.forEach((u) => {
-    const o1 = document.createElement('option'); o1.value = u.id; o1.textContent = u.display_name; reporter.appendChild(o1);
-    const o2 = document.createElement('option'); o2.value = u.id; o2.textContent = u.display_name; assignee.appendChild(o2);
-  });
-  if (users.length) reporter.value = users[0].id;
-  try {
-    const t = await api.getInspectionTasks();
-    if (t.code === 0 && Array.isArray(t.data)) {
-      const sel = document.getElementById('bugInspectionTask');
-      t.data.forEach((task) => { const o = document.createElement('option'); o.value = task.id; o.textContent = task.name; sel.appendChild(o); });
-    }
-  } catch {}
-  try {
-    const m = await api.getFunctionModules();
-    if (m.code === 0 && Array.isArray(m.data)) {
-      const sel = document.getElementById('bugModule');
-      m.data.forEach((mod) => { const o = document.createElement('option'); o.value = mod.id; o.textContent = mod.name; sel.appendChild(o); });
-    }
-  } catch {}
-}
-
-document.getElementById('btnBug').addEventListener('click', async () => {
-  await loadFormData();
-  const now = new Date();
-  document.getElementById('bugTitle').value = `录屏BUG - ${now.toLocaleString('zh-CN', { hour12: false })}`;
-  elBugFormOverlay.classList.remove('hidden');
-});
-
-document.getElementById('btnBugCancel').addEventListener('click', () => {
-  elBugFormOverlay.classList.add('hidden');
-});
-
-document.getElementById('btnBugSubmit').addEventListener('click', async () => {
-  const title = document.getElementById('bugTitle').value.trim();
-  const reporterId = parseInt(document.getElementById('bugReporter').value);
-  if (!title) { setSubmit('请填写标题', true); return; }
-  if (!reporterId) { setSubmit('请选择录入人', true); return; }
-  if (!state.recordedBlob) { setSubmit('无录制内容', true); return; }
-
-  const btn = document.getElementById('btnBugSubmit');
-  btn.disabled = true; btn.textContent = '提交中...';
-  setSubmit('处理中（转换 mp4 并上传）...', false);
-
-  const assigneeVal = document.getElementById('bugAssignee').value;
-  const taskVal = document.getElementById('bugInspectionTask').value;
-  const moduleVal = document.getElementById('bugModule').value;
-  const buf = await state.recordedBlob.arrayBuffer();
-
-  try {
-    const res = await api.submitBug({
-      webm: buf,
-      title,
-      description: document.getElementById('bugDescription').value.trim(),
-      bug_type: document.getElementById('bugType').value,
-      priority: document.getElementById('bugPriority').value,
-      reporter_id: reporterId,
-      assignee_id: assigneeVal ? parseInt(assigneeVal) : reporterId,
-      inspection_task_id: taskVal ? parseInt(taskVal) : null,
-      module_id: moduleVal ? parseInt(moduleVal) : null,
-    });
-    if (res && res.success) {
-      setSubmit(res.message || 'BUG录入成功', false);
-      // 主进程会关闭窗口
-    } else {
-      setSubmit((res && res.message) || '提交失败', true);
-      btn.disabled = false; btn.textContent = '提交 BUG';
-    }
-  } catch (err) {
-    setSubmit('提交失败：' + (err.message || '网络错误'), true);
-    btn.disabled = false; btn.textContent = '提交 BUG';
-  }
-});
-
-function setSubmit(msg, isError) {
-  const el = document.getElementById('submitStatus');
-  el.textContent = msg;
-  el.className = 'submit-status' + (isError ? ' error' : '');
-  el.classList.remove('hidden');
-}

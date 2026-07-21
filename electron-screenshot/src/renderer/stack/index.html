@@ -2,18 +2,18 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
-  <title>多图收集</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; clipboard-read 'self'; clipboard-write 'self'">
+  <title>截图收集</title>
   <link rel="stylesheet" href="stack.css">
 </head>
 <body>
   <!-- 标题栏（可拖拽） -->
   <div id="titlebar">
-    <span class="title-text">多图收集 <span id="count">(0/5)</span></span>
+    <span class="title-text">截图收集 <span id="count">(0/10)</span></span>
   </div>
 
   <!-- 提示词 -->
-  <div id="tipBar">💡 按 <b>Ctrl+Shift+A</b> 继续截图，点「多图」即可加入收集</div>
+  <div id="tipBar">💡 多选截图以生成组合图</div>
 
   <!-- 缩略图列表 -->
   <div id="thumbList"></div>

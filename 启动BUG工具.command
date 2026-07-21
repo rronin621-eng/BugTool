@@ -12,6 +12,47 @@ echo "=========================================="
 echo "  BUG工具 启动中..."
 echo "=========================================="
 
+# ── 定位 Node.js ─────────────────────────────────
+# 双击 .command 时 PATH 很精简，需主动补充常见 node 安装位置
+setup_node_path() {
+  # 尝试加载用户 shell 配置（nvm 等）
+  [ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null
+  [ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile" 2>/dev/null
+  [ -s "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh" 2>/dev/null
+
+  # 补充常见安装位置到 PATH
+  local candidates=(
+    "/usr/local/bin"
+    "/opt/homebrew/bin"
+    "$HOME/.local/node/bin"
+    "$HOME/.volta/bin"
+    "/usr/local/opt/node/bin"
+  )
+  for d in "${candidates[@]}"; do
+    [ -d "$d" ] && PATH="$d:$PATH"
+  done
+  # nvm 默认版本目录
+  if [ -d "$HOME/.nvm/versions/node" ]; then
+    local latest
+    latest="$(ls -1 "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)"
+    [ -n "$latest" ] && PATH="$HOME/.nvm/versions/node/$latest/bin:$PATH"
+  fi
+  export PATH
+}
+
+setup_node_path
+
+# 检查 node 是否可用
+if ! command -v node >/dev/null 2>&1; then
+  echo "❌ 未找到 Node.js！"
+  echo "   Web 管理端需要 Node.js 才能运行。"
+  echo "   请先安装 Node.js（建议 LTS 版）：https://nodejs.org/"
+  echo "   安装后重新双击本文件即可。"
+  read -p "按回车键退出..."
+  exit 1
+fi
+echo "[环境] Node.js: $(node -v)  ($(command -v node))"
+
 # ── 0. 环境检测与依赖自动安装 ──────────────────────
 check_and_install() {
   local need_install=0
@@ -77,7 +118,12 @@ echo "   ✅ 后端已启动 (PID: $SERVER_PID)"
 # ── 2. Web 前端（后台运行）──────────────────────
 echo "[2/3] 启动 Web 前端 (端口 5173)..."
 cd "$ROOT/web"
-npx vite --port 5173 &
+# 直接调用本地 vite 二进制，避免依赖 npx 在 PATH 中
+if [ -f "$ROOT/web/node_modules/.bin/vite" ]; then
+  "$ROOT/web/node_modules/.bin/vite" --port 5173 &
+else
+  npm run dev &
+fi
 WEB_PID=$!
 sleep 3
 

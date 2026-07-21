@@ -36,10 +36,10 @@
     <button id="btnUndo" class="tool-btn" title="撤销 (Ctrl+Z)">↩</button>
     <button id="btnClear" class="tool-btn" title="清除标注">🗑</button>
     <span class="toolbar-divider"></span>
-    <label class="color-picker">
+    <label class="color-picker" title="颜色">
       <input type="color" id="colorPicker" value="#ff0000">
     </label>
-    <select id="lineWidth" class="line-width-select">
+    <select id="lineWidth" class="line-width-select" title="线宽">
       <option value="2">细</option>
       <option value="3" selected>中</option>
       <option value="5">粗</option>
@@ -47,8 +47,8 @@
     <span class="toolbar-divider"></span>
     <button id="btnCopy" class="tool-btn action-btn" title="复制到剪贴板">📋</button>
     <button id="btnDownload" class="tool-btn action-btn" title="保存到桌面">💾</button>
-    <button id="btnMultiShot" class="tool-btn combine-btn" title="加入多图组合">＋组合</button>
-    <button id="btnBug" class="tool-btn bug-btn" title="录入BUG">录入</button>
+    <button id="btnMultiShot" class="tool-btn combine-btn" title="加入多图组合" style="display:none">＋组合</button>
+    <button id="btnBug" class="tool-btn record-btn" title="录入 BUG">记录</button>
     </span>
 
     <!-- 录屏控制组 -->
@@ -62,132 +62,159 @@
 
     <span class="toolbar-divider"></span>
     <button id="btnCancel" class="tool-btn cancel-btn small" title="取消 (Esc)">✕</button>
+    <button id="btnConfirm" class="tool-btn confirm-btn small" title="完成（复制到剪贴板）">✓</button>
   </div>
 
   <!-- BUG录入弹窗 -->
   <div id="bugFormOverlay" class="bug-form-overlay hidden">
     <div class="bug-form-container">
-      <!-- 左侧：截图预览 + 继续标注 -->
-      <div class="bug-form-preview">
-        <div class="bug-form-preview-toolbar">
-          <button id="btnBugRect" class="tool-btn active" title="矩形框">▭</button>
-          <button id="btnBugArrow" class="tool-btn" title="箭头">→</button>
-          <button id="btnBugPen" class="tool-btn" title="画笔">✎</button>
-          <button id="btnBugText" class="tool-btn" title="文字">T</button>
-          <span class="toolbar-divider"></span>
-          <label class="color-picker">
-            <input type="color" id="bugColorPicker" value="#ff0000">
-          </label>
-          <select id="bugLineWidth" class="line-width-select">
-            <option value="2">细</option>
-            <option value="3" selected>中</option>
-            <option value="5">粗</option>
-          </select>
-          <span class="toolbar-divider"></span>
-          <button id="btnBugUndo" class="tool-btn" title="撤销">↩</button>
-          <button id="btnBugClear" class="tool-btn" title="清除标注">🗑</button>
+      <div class="window-drag-bar"></div>
+      <div class="bug-form-body">
+        <!-- 左侧：截图预览 + 继续标注 -->
+        <div class="bug-form-preview">
+          <div class="bug-form-preview-toolbar">
+            <button id="btnBugRect" class="tool-btn active" title="矩形框">▭</button>
+            <button id="btnBugArrow" class="tool-btn" title="箭头">→</button>
+            <button id="btnBugPen" class="tool-btn" title="画笔">✎</button>
+            <button id="btnBugText" class="tool-btn" title="文字">T</button>
+            <span class="toolbar-divider"></span>
+            <label class="color-picker">
+              <input type="color" id="bugColorPicker" value="#ff0000">
+            </label>
+            <select id="bugLineWidth" class="line-width-select">
+              <option value="2">细</option>
+              <option value="3" selected>中</option>
+              <option value="5">粗</option>
+            </select>
+            <span class="toolbar-divider"></span>
+            <button id="btnBugUndo" class="tool-btn" title="撤销">↩</button>
+            <button id="btnBugClear" class="tool-btn" title="清除标注">🗑</button>
+          </div>
+          <div class="bug-form-preview-canvas-wrapper">
+            <canvas id="bugFormCanvas"></canvas>
+          </div>
+          <!-- 文字输入框（用于弹窗内文字标注） -->
+          <input type="text" id="bugTextInput" class="text-input hidden" placeholder="输入文字...">
         </div>
-        <div class="bug-form-preview-canvas-wrapper">
-          <canvas id="bugFormCanvas"></canvas>
-        </div>
-        <!-- 文字输入框（用于弹窗内文字标注） -->
-        <input type="text" id="bugTextInput" class="text-input hidden" placeholder="输入文字...">
-      </div>
 
-      <!-- 右侧：表单字段 -->
-      <div class="bug-form-fields">
-        <h3>录入 BUG</h3>
-
-        <div class="bug-form-content">
-          <!-- 基础信息 -->
-          <div class="form-section">
-            <div class="form-section-label">基础信息</div>
-            <div class="form-group">
-              <label>标题 <span class="required">*</span></label>
-              <input type="text" id="bugTitle" placeholder="请输入 BUG 标题">
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>BUG 类型 <span class="required">*</span></label>
-                <select id="bugType">
-                  <option value="ui">UI 缺陷</option>
-                  <option value="functional">功能缺陷</option>
-                  <option value="performance">性能问题</option>
-                  <option value="security">安全问题</option>
-                  <option value="other">其他</option>
-                </select>
+        <!-- 右侧：表单字段 -->
+        <div class="bug-form-fields">
+          <h3>录入 DMP 缺陷</h3>
+          <div class="bug-form-content">
+            <!-- 连接检查 -->
+            <div id="dmpConnectPanel" class="form-section dmp-connect-panel">
+              <div class="form-section-label">第一步：连接 DMP</div>
+              <div class="dmp-connect-status">
+                <span id="dmpConnectIcon">🔴</span>
+                <span id="dmpConnectText">未连接 DMP</span>
               </div>
-              <div class="form-group">
-                <label>优先级</label>
-                <select id="bugPriority">
-                  <option value="critical">紧急</option>
-                  <option value="high">高</option>
-                  <option value="medium" selected>中</option>
-                  <option value="low">低</option>
-                </select>
+              <p class="dmp-connect-tip">点击下方的「打开 DMP 并登录」，在 Chrome 中登录 DMP，然后再点击「链接测试」。</p>
+              <div class="form-actions dmp-connect-actions">
+                <button id="btnDmpLaunch" class="btn-secondary">打开 DMP 并登录</button>
+                <button id="btnDmpTest" class="btn-primary">链接测试</button>
+                <button id="btnDmpManualSubmit" class="btn-secondary">手动提交</button>
+              </div>
+              <div id="dmpConnectMsg" class="submit-status hidden"></div>
+            </div>
+
+            <div id="dmpFormContent" class="hidden">
+              <!-- 基础信息 -->
+              <div class="form-section">
+                <div class="form-section-label">缺陷内容</div>
+                <div class="form-group">
+                  <label>标题 <span class="required">*</span></label>
+                  <input type="text" id="bugTitle" placeholder="请输入缺陷标题">
+                </div>
+                <div class="form-group">
+                  <label>描述</label>
+                  <textarea id="bugDescription" rows="3" placeholder="描述缺陷现象..."></textarea>
+                </div>
+              </div>
+
+              <!-- DMP 必填信息 -->
+              <div class="form-section">
+                <div class="form-section-label">DMP 必填信息</div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>项目名称 <span class="required">*</span></label>
+                    <input type="text" id="dmpProjectName" placeholder="如：苍穹财务云">
+                  </div>
+                  <div class="form-group">
+                    <label>模块路径 <span class="required">*</span></label>
+                    <input type="text" id="dmpModulePath" placeholder="如：总账 > 凭证管理">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>缺陷类型 <span class="required">*</span></label>
+                    <select id="dmpDefectType">
+                      <option value="交互体验" selected>交互体验</option>
+                      <option value="功能缺陷">功能缺陷</option>
+                      <option value="UI缺陷">UI缺陷</option>
+                      <option value="性能问题">性能问题</option>
+                      <option value="兼容性问题">兼容性问题</option>
+                      <option value="其他">其他</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>发现阶段 <span class="required">*</span></label>
+                    <select id="dmpDiscoveryStage">
+                      <option value="验收测试" selected>验收测试</option>
+                      <option value="dev测试">dev测试</option>
+                      <option value="SIT测试">SIT测试</option>
+                      <option value="UAT测试">UAT测试</option>
+                      <option value="灰度">灰度</option>
+                      <option value="线上">线上</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>DMP 优先级 <span class="required">*</span></label>
+                    <select id="dmpPriority">
+                      <option value="高" selected>高</option>
+                      <option value="中">中</option>
+                      <option value="低">低</option>
+                      <option value="紧急">紧急</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>测试环境 <span class="required">*</span></label>
+                    <input type="text" id="dmpTestEnv" placeholder="如：https://test.kingdee.com">
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>来源 <span class="required">*</span></label>
+                    <select id="dmpSource">
+                      <option value="手工新增" selected>手工新增</option>
+                      <option value="走查发现">走查发现</option>
+                      <option value="测试发现">测试发现</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label id="dmpStoryLabel">关联故事 <span class="required">*</span></label>
+                    <input type="text" id="dmpStoryValue" placeholder="如：PRJ-00761367">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>处理人工号 <span class="required">*</span>（DMP 根据工号分配）</label>
+                  <input type="text" id="dmpHandlerId" placeholder="如：10001">
+                </div>
+                <div class="form-group">
+                  <label>备注补充</label>
+                  <textarea id="dmpNoteExtra" rows="2" placeholder="会追加到 DMP 备注中"></textarea>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- 人员信息 -->
-          <div class="form-section">
-            <div class="form-section-label">人员信息</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>录入人 <span class="required">*</span></label>
-                <select id="bugReporter"></select>
-              </div>
-              <div class="form-group">
-                <label>接收人</label>
-                <select id="bugAssignee">
-                  <option value="">-- 请选择 --</option>
-                </select>
-              </div>
-            </div>
+          <div class="form-actions">
+            <button id="btnBugCancel" class="btn-secondary">取消</button>
+            <button id="btnBugSubmit" class="btn-primary" disabled>提交 DMP 缺陷</button>
           </div>
-
-          <!-- 关联信息 -->
-          <div class="form-section">
-            <div class="form-section-label">关联信息</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>走查项目</label>
-                <select id="bugInspectionTask">
-                  <option value="">-- 不关联 --</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>功能模块</label>
-                <select id="bugModule">
-                  <option value="">-- 不关联 --</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-group">
-              <label>环境链接</label>
-              <input type="url" id="bugEnvUrl" placeholder="https://...">
-            </div>
-          </div>
-
-          <!-- 详细描述 -->
-          <div class="form-section">
-            <div class="form-section-label">详细描述</div>
-            <div class="form-group">
-              <label>BUG 描述</label>
-              <textarea id="bugDescription" rows="3" placeholder="描述 BUG 现象..."></textarea>
-            </div>
-            <div class="form-group">
-              <label>复现步骤</label>
-              <textarea id="bugReproductionSteps" rows="3" placeholder="1. 打开页面&#10;2. 执行操作&#10;3. 观察现象..."></textarea>
-            </div>
-          </div>
+          <div id="submitStatus" class="submit-status hidden"></div>
         </div>
-
-        <div class="form-actions">
-          <button id="btnBugCancel" class="btn-secondary">取消</button>
-          <button id="btnBugSubmit" class="btn-primary">提交 BUG</button>
-        </div>
-        <div id="submitStatus" class="submit-status hidden"></div>
       </div>
     </div>
   </div>
