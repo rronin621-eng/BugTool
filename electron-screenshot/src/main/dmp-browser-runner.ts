@@ -218,16 +218,25 @@ export async function submitBugViaBrowser(data: DmpBrowserSubmitData): Promise<D
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    // 60 秒超时保护，防止脚本卡住导致 UI 一直显示"提交中..."
+    const timeoutId = setTimeout(() => {
+      console.error('[DMP-Browser] dmp-create 执行超时（60秒），强制终止');
+      try { child.kill('SIGKILL'); } catch {}
+      resolve({ success: false, message: 'DMP 创建执行超时（60秒），请检查 Chrome 是否已登录并打开 CDP。如果停留在 DMP 首页无反应，请把 bug-batch-dmp-v2.0.0/screenshots 目录下的截图发给我。' });
+    }, 60000);
+
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
     child.on('error', (err) => {
+      clearTimeout(timeoutId);
       resolve({ success: false, message: `启动 dmp-create 失败：${err.message}` });
     });
 
     child.on('close', (code) => {
+      clearTimeout(timeoutId);
       const output = stdout + stderr;
       console.log('[DMP-Browser] dmp-create 输出：\n' + output);
 

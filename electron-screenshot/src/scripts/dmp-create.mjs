@@ -69,24 +69,51 @@ const DISCOVERY_STAGE = DEFAULTS.discovery_stage || 'dev测试';
 const DISCOVERY_SEARCH = DISCOVERY_STAGE.replace(/测试|发布|编码|sit|sit测试|灰度/gi, '').trim() || DISCOVERY_STAGE.slice(0, 3);
 
 // ===== helper =====
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+async function debugScreenshot(page, name) {
+  try {
+    const file = `screenshots/${name}_${Date.now()}.png`;
+    await page.screenshot({ path: file });
+    console.log(`  截图已保存: ${file}`);
+  } catch (e) {
+    console.log(`  截图失败: ${e.message}`);
+  }
+}
+
 async function clickVisibleText(page, text, options = {}) {
-  const { exact = true, timeout = 2000, retry = 1 } = options;
+  const { exact = true, timeout = 3000, retry = 2 } = options;
   const locator = exact
     ? page.getByText(text, { exact: true })
     : page.getByText(text);
+  const count = await locator.count();
+  console.log(`  查找文本[${text}]: 匹配 ${count} 个元素`);
+
   for (let i = 0; i < retry; i++) {
     try {
-      const first = locator.first();
-      await first.waitFor({ state: 'visible', timeout });
-      await first.click({ timeout });
+      // 优先使用可见元素
+      const visible = page.locator(':visible').filter({ hasText: exact ? new RegExp(`^${text}$`) : text }).first();
+      await visible.waitFor({ state: 'visible', timeout });
+      await visible.click({ timeout });
       console.log(`  点击成功: ${text}`);
       return true;
     } catch (e) {
-      if (i === retry - 1) {
-        console.log(`  点击失败或找不到: ${text} (${e.message})`);
-        return false;
+      try {
+        // 回退：直接点击第一个匹配项
+        const first = locator.first();
+        await first.waitFor({ state: 'visible', timeout });
+        await first.click({ timeout });
+        console.log(`  点击成功: ${text}`);
+        return true;
+      } catch (e2) {
+        if (i === retry - 1) {
+          console.log(`  点击失败或找不到: ${text} (${e2.message})`);
+          return false;
+        }
+        await page.waitForTimeout(500);
       }
-      await page.waitForTimeout(500);
     }
   }
   return false;
@@ -99,25 +126,30 @@ async function navigateToDefectList(page) {
   }
 
   console.log('  导航: 尝试从首页/其他页进入缺陷列表...');
+  await debugScreenshot(page, 'navigate_start');
 
   // 方案1: 应用 → 研发管理（DMP）
+  console.log('  方案1: 应用 → 研发管理（DMP）');
   if (await clickVisibleText(page, '应用', { exact: false, timeout: 3000, retry: 2 })) {
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(2000);
+    await debugScreenshot(page, 'after_click_app');
     if (await clickVisibleText(page, '研发管理（DMP）', { exact: false, timeout: 3000, retry: 2 })) {
-      await page.waitForTimeout(5000);
+      await page.waitForTimeout(6000);
+      await debugScreenshot(page, 'after_click_dmp');
       if (await page.locator('#tblnew').count() > 0) return true;
     }
   }
 
   // 方案2: 直接找"缺陷管理"入口（支持模糊匹配，允许图标子元素）
-  console.log('  导航: 尝试点击缺陷管理...');
+  console.log('  方案2: 直接点击缺陷管理');
   if (await clickVisibleText(page, '缺陷管理', { exact: false, timeout: 3000, retry: 2 })) {
     await page.waitForTimeout(6000);
+    await debugScreenshot(page, 'after_click_bugmgmt');
     if (await page.locator('#tblnew').count() > 0) return true;
   }
 
   // 方案3: 用真实鼠标点击第一个可见的"缺陷管理"元素
-  console.log('  导航: 尝试真实鼠标点击缺陷管理...');
+  console.log('  方案3: 真实鼠标点击缺陷管理');
   const coord = await page.evaluate(() => {
     const els = [...document.querySelectorAll('*')].filter(e => {
       const text = e.textContent?.trim() || '';
@@ -133,6 +165,7 @@ async function navigateToDefectList(page) {
   if (coord) {
     await page.mouse.click(coord.x, coord.y);
     await page.waitForTimeout(6000);
+    await debugScreenshot(page, 'after_mouse_click_bugmgmt');
   }
 
   return await page.locator('#tblnew').count() > 0;
@@ -144,6 +177,7 @@ async function openNewForm(page) {
   const inList = await navigateToDefectList(page);
   if (!inList) {
     console.error('❌ 无法进入缺陷列表，请确认当前在 DMP 页面且已登录');
+    await debugScreenshot(page, 'navigate_failed');
     return false;
   }
 
@@ -154,6 +188,7 @@ async function openNewForm(page) {
       await page.waitForTimeout(5000);
     } catch (e) {
       console.log('  #tblnew 点击失败:', e.message);
+      await debugScreenshot(page, 'tblnew_click_failed');
     }
   }
   return await page.locator('input[placeholder="名称不能为空"]:visible').count() > 0;
@@ -220,9 +255,48 @@ console.log(`标题: ${defect.title.slice(0, 40)}`);
 console.log(`处理人: ${defect.handler_name} | 关联故事: ${storyValue || '(无)'}`);
 
 const browser = await chromium.connectOverCDP('http://localhost:9222');
-const page = browser.contexts().flatMap(c => c.pages()).find(p => p.url().includes('devops'));
-if (!page) { console.error('找不到 DevOps 标签页，请确认已在 Chrome 中打开 DMP'); process.exit(1); }
-await page.bringToFront();
+
+// 确保 screenshots 目录存在
+ensureDir('screenshots');
+
+// 等待并查找 DMP 页面
+async function findDmpPage(browser, timeoutMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const pages = browser.contexts().flatMap(c => c.pages());
+    for (const p of pages) {
+      const url = p.url() || '';
+      if (url.includes('devops.kingdee.com') || url.includes('kingdee.com/devops')) {
+        return p;
+      }
+    }
+    await new Promise(r => setTimeout(r, 500));
+  }
+  return null;
+}
+
+let page = await findDmpPage(browser);
+if (!page) {
+  console.log('[dmp-create] 未找到现有 DMP 标签页，尝试新建标签页打开 DMP...');
+  try {
+    const contexts = browser.contexts();
+    const context = contexts[0] || await browser.newContext();
+    page = await context.newPage();
+    await page.goto('https://devops.kingdee.com:8000/?formId=home_page&code=17845991817a3d4cc6b5ea9ea7b8dced');
+    await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
+    await page.waitForTimeout(3000);
+  } catch (e) {
+    console.error('❌ 找不到 DevOps 标签页且无法新建：', e.message);
+    process.exit(1);
+  }
+}
+
+console.log('[dmp-create] 当前页面 URL:', page.url());
+try {
+  await page.bringToFront();
+} catch (e) {
+  console.log('[dmp-create] bringToFront 失败（继续）:', e.message);
+}
 
 // 检测浏览器名称，用于隐藏/恢复窗口
 let _ver = '';
