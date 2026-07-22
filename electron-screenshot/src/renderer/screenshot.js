@@ -789,7 +789,53 @@ document.getElementById('btnClear').addEventListener('click', clearAnnotations);
 document.getElementById('btnCopy').addEventListener('click', copyToClipboard);
 document.getElementById('btnDownload').addEventListener('click', saveToDesktop);
 document.getElementById('btnMultiShot').addEventListener('click', addToMultiShot);
-document.getElementById('btnBug').addEventListener('click', showBugForm);
+// 记录按钮：一键快速手动提交到 DMP
+async function quickManualSubmit() {
+  const dataUrl = exportAnnotatedImage();
+  const textAnnotations = state.annotations.filter(a => a.type === 'text');
+  const hasText = textAnnotations.length > 0;
+  const textContent = textAnnotations.map(a => a.text).join('\n');
+
+  // 1. 先保存到右下角浮窗
+  api.addToMultiShot({ dataUrl, hasText, textContent });
+  showToast('已保存到暂存浮窗');
+
+  // 2. 检查 DMP 连接
+  const testResult = await api.testDmpConnection();
+  if (!testResult.success) {
+    showToast('未连接 DMP，请先登录并打开缺陷列表');
+    await api.launchDmpBrowser();
+    api.cancel();
+    return;
+  }
+
+  // 3. 已连接，后台执行手动提交
+  const now = new Date();
+  const title = `DMP缺陷 - ${now.toLocaleString('zh-CN', { hour12: false })}`;
+  api.submitBug({
+    title,
+    description: '',
+    imageDataUrl: dataUrl,
+    mode: 'manual',
+    dmpForm: {
+      project_name: '',
+      module_path: '',
+      defect_type: '功能缺陷',
+      discovery_stage: 'dev测试',
+      priority: '中',
+      source: '测试',
+      test_env: '',
+      story_value: '',
+      handler_id: '',
+      note_extra: '',
+    }
+  });
+
+  // 4. 关闭截图窗口
+  api.cancel();
+}
+
+document.getElementById('btnBug').addEventListener('click', quickManualSubmit);
 document.getElementById('btnConfirm').addEventListener('click', confirmAndContinue);
 
 // ============ 截图/录屏 模式页签 ============
