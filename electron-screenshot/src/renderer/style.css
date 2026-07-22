@@ -170,8 +170,7 @@ body {
 /* ============ 文字工具子栏 ============ */
 .text-sub-toolbar {
   position: fixed;
-  top: 52px;
-  left: 50%;
+  /* left/top 由 JS 动态设置 */
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -188,7 +187,7 @@ body {
 }
 
 @keyframes slideDown {
-  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 

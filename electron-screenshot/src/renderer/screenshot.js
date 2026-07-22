@@ -488,9 +488,9 @@ function handleAnnotationStart(e) {
   if (mx < selX || mx > selX + selW || my < selY || my > selY + selH) return;
 
   if (state.currentTool === 'text') {
-    // 刚确认过一次输入，跳过本次 mousedown
-    if (state.textJustConfirmed) {
-      state.textJustConfirmed = false;
+    // 如果文字输入框正在显示，点击其他地方 = 同步确认当前输入，不创建新输入框
+    if (state._confirmTextInput) {
+      state._confirmTextInput();
       return;
     }
     // 先检测是否命中已有文字，命中则选中并拖拽
@@ -708,17 +708,16 @@ function showTextInput(x, y, editIdx) {
     textInput.removeEventListener('blur', handleBlur);
     // 恢复窗口层级
     api.setWindowLevel('screen-saver');
+    // 清除全局确认引用
+    state._confirmTextInput = null;
   };
 
-  // blur 时用 setTimeout 给时间让 keydown 先处理
-  // blur 后设置冷却标志，防止同一次点击事件立即触发新的文字输入框
+  // 保存到全局，以便点击画布其他位置时同步触发确认
+  state._confirmTextInput = handleConfirm;
+
+  // blur 时同步确认（不再延迟，不再需要冷却标志）
   const handleBlur = () => {
-    setTimeout(() => {
-      state.textJustConfirmed = true;
-      handleConfirm();
-      // 冷却期结束后重置标志（兜底）
-      setTimeout(() => { state.textJustConfirmed = false; }, 300);
-    }, 150);
+    handleConfirm();
   };
 
   const handleKeyDown = (e) => {
@@ -730,8 +729,8 @@ function showTextInput(x, y, editIdx) {
       textInput.classList.add('hidden');
       textInput.removeEventListener('keydown', handleKeyDown);
       textInput.removeEventListener('blur', handleBlur);
-      // 恢复窗口层级
       api.setWindowLevel('screen-saver');
+      state._confirmTextInput = null;
     }
   };
 
@@ -1028,8 +1027,15 @@ function setTool(tool) {
   const btnMap = { rect: 'btnRect', arrow: 'btnArrow', pen: 'btnPen', text: 'btnText' };
   document.getElementById(btnMap[tool])?.classList.add('active');
 
-  // 文字工具激活时显示子栏，否则隐藏并取消选中
+  // 文字工具激活时显示子栏并定位到 T 按钮下方，否则隐藏并取消选中
   if (tool === 'text') {
+    // 动态定位：获取 T 按钮位置，子栏居中在其下方
+    const btnTextEl = document.getElementById('btnText');
+    if (btnTextEl) {
+      const rect = btnTextEl.getBoundingClientRect();
+      textSubToolbar.style.left = (rect.left + rect.width / 2) + 'px';
+      textSubToolbar.style.top = (rect.bottom + 6) + 'px';
+    }
     textSubToolbar.classList.remove('hidden');
   } else {
     textSubToolbar.classList.add('hidden');
