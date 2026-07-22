@@ -474,7 +474,7 @@ async function waitForCdp(playwright: any, timeoutMs: number): Promise<boolean> 
  * 测试 DMP 链接。
  * 通过 CDP 连接 Chrome，检查是否能访问 DMP 页面。
  */
-export async function testDmpConnection(): Promise<{ success: boolean; message: string }> {
+export async function testDmpConnection(): Promise<{ success: boolean; message: string; isInDefectList?: boolean }> {
   const config = getDmpBrowserConfig();
   const skillDir = findSkillDir(config.skillDir);
   if (!skillDir) {
@@ -509,6 +509,8 @@ export async function testDmpConnection(): Promise<{ success: boolean; message: 
       return { success: false, message: 'Chrome 中没有找到 DMP 页面，请先点击「打开 DMP 并登录」' };
     }
 
+    let isInDefectList = false;
+
     // 检查页面是否加载完成（不是 about:blank）
     for (const page of dmpPages) {
       try {
@@ -521,12 +523,17 @@ export async function testDmpConnection(): Promise<{ success: boolean; message: 
         if (readyState !== 'complete') {
           return { success: false, message: 'DMP 页面仍在加载中，请稍后再试' };
         }
+        // 检查是否在缺陷列表页（存在 #tblnew 按钮）
+        const hasTblnew = await page.locator('#tblnew').count() > 0;
+        if (hasTblnew) {
+          isInDefectList = true;
+        }
       } catch {
         // 继续检查下一个页面
       }
     }
 
-    return { success: true, message: `DMP 链接正常（已打开 ${dmpPages.length} 个 DMP 标签页）` };
+    return { success: true, message: `DMP 链接正常（已打开 ${dmpPages.length} 个 DMP 标签页）`, isInDefectList };
   } catch (err: any) {
     return { success: false, message: `链接测试异常：${err.message}` };
   } finally {

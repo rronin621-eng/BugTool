@@ -809,12 +809,30 @@ async function quickManualSubmit() {
     return;
   }
 
-  // 3. 已连接，后台执行手动提交
-  const now = new Date();
-  const title = `DMP缺陷 - ${now.toLocaleString('zh-CN', { hour12: false })}`;
+  // 3. 已连接但不在缺陷列表页
+  if (!testResult.isInDefectList) {
+    showToast('请打开缺陷列表页');
+    api.cancel();
+    return;
+  }
+
+  // 4. 生成标题和描述：有文字标注时优先使用，否则自动生成标题
+  let title;
+  let description = '';
+  if (textAnnotations.length > 0) {
+    title = textAnnotations[0].text.trim();
+    if (textAnnotations.length > 1) {
+      description = textContent;
+    }
+  } else {
+    const now = new Date();
+    title = `DMP缺陷 - ${now.toLocaleString('zh-CN', { hour12: false })}`;
+  }
+
+  // 5. 已连接且在缺陷列表页，后台执行手动提交
   api.submitBug({
     title,
-    description: '',
+    description,
     imageDataUrl: dataUrl,
     mode: 'manual',
     dmpForm: {
@@ -831,7 +849,7 @@ async function quickManualSubmit() {
     }
   });
 
-  // 4. 关闭截图窗口
+  // 6. 关闭截图窗口
   api.cancel();
 }
 
