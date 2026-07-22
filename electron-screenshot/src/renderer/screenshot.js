@@ -725,6 +725,8 @@ function showTextInput(x, y, editIdx) {
       e.preventDefault();
       handleConfirm();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
       confirmed = true;
       textInput.classList.add('hidden');
       textInput.removeEventListener('keydown', handleKeyDown);
