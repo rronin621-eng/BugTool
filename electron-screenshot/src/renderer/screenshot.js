@@ -931,57 +931,28 @@ async function quickManualSubmit() {
     return;
   }
 
-  // 3. 已连接且在缺陷列表页：直接提交，不保存浮窗
-  showToast('正在提交到 DMP...');
-  const submitBtn = document.getElementById('btnBug');
-  const originalText = submitBtn ? submitBtn.textContent : '';
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.textContent = '提交中...';
-  }
-
-  try {
-    const result = await api.submitBug({
-      title,
-      description,
-      imageDataUrl: dataUrl,
-      mode: 'manual',
-      dmpForm: {
-        project_name: '',
-        module_path: '',
-        defect_type: '功能缺陷',
-        discovery_stage: 'dev测试',
-        priority: '中',
-        source: '测试',
-        test_env: '',
-        story_value: '',
-        handler_id: '',
-        note_extra: '',
-      }
-    });
-
-    if (result && result.success) {
-      showToast(result.message || '提交成功');
-      api.cancel();
-    } else {
-      // 提交失败：保存到浮窗，提示用户
-      api.addToMultiShot({ dataUrl, hasText, textContent });
-      const errMsg = (result && result.message) || '提交失败';
-      showToast(errMsg.length > 50 ? errMsg.slice(0, 50) + '...' : errMsg);
-      if (submitBtn) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = originalText;
-      }
+  // 3. 已连接且在缺陷列表页：fire-and-forget 提交，立即退出截图
+  // 不等待提交结果，进度提示由主进程通过浮窗 toast 展示
+  api.submitBug({
+    title,
+    description,
+    imageDataUrl: dataUrl,
+    mode: 'manual',
+    dmpForm: {
+      project_name: '',
+      module_path: '',
+      defect_type: '功能缺陷',
+      discovery_stage: 'dev测试',
+      priority: '中',
+      source: '测试',
+      test_env: '',
+      story_value: '',
+      handler_id: '',
+      note_extra: '',
     }
-  } catch (e) {
-    // 提交异常：保存到浮窗，提示用户
-    api.addToMultiShot({ dataUrl, hasText, textContent });
-    showToast('提交异常，已保存到浮窗');
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = originalText;
-    }
-  }
+  }).catch(() => {});
+  // 立即退出截图模式，提交进度由浮窗 toast 显示
+  api.cancel();
 }
 
 document.getElementById('btnBug').addEventListener('click', quickManualSubmit);

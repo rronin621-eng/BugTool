@@ -226,6 +226,11 @@ api.onListUpdated((data) => {
   render(data);
 });
 
+// 监听主进程发送的 toast 提示（提交进度等）
+api.onShowToast((msg, duration) => {
+  showToast(msg, duration || 3000);
+});
+
 // 初始加载
 api.getList().then((res) => {
   render(res);

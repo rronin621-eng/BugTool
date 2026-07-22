@@ -143,6 +143,12 @@ export function updateStackWindow(): void {
   }
 }
 
+export function showToastToStack(msg: string, duration?: number): void {
+  if (stackWindow && !stackWindow.isDestroyed()) {
+    stackWindow.webContents.send('multishot:show-toast', msg, duration);
+  }
+}
+
 export function closeStackWindow(): void {
   if (stackWindow && !stackWindow.isDestroyed()) {
     stackWindow.destroy();

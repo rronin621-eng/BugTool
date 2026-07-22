@@ -100,6 +100,9 @@ contextBridge.exposeInMainWorld('stackAPI', {
   onListUpdated: (callback: (data: { images: string[]; textInfo: { hasText: boolean; textContent: string }[] }) => void) => {
     ipcRenderer.on('multishot:list-updated', (_e, images, textInfo) => callback({ images, textInfo }));
   },
+  onShowToast: (callback: (msg: string, duration?: number) => void) => {
+    ipcRenderer.on('multishot:show-toast', (_e, msg, duration) => callback(msg, duration));
+  },
   remove: (index: number) => ipcRenderer.send('multishot:remove', index),
   clear: () => ipcRenderer.send('multishot:clear'),
   openCombine: () => ipcRenderer.send('multishot:open-combine'),
