@@ -307,7 +307,7 @@ let _browserHidden = false;
 function hideBrowser() {
   if (_browserHidden) return;
   try {
-    execSync(`osascript -e 'tell application "System Events" to set visible of process "${_appName}" to false'`, { stdio: 'ignore' });
+    execSync(`osascript -e 'tell application "System Events" to set visible of process "${_appName}" to false'`, { stdio: 'ignore', timeout: 3000 });
     _browserHidden = true;
     console.log(`[browser] 已隐藏 ${_appName} 窗口，后台静默执行自动化...`);
   } catch (e) {
@@ -318,7 +318,7 @@ function hideBrowser() {
 function showBrowser() {
   if (!_browserHidden) return;
   try {
-    execSync(`osascript -e 'tell application "${_appName}" to activate'`, { stdio: 'ignore' });
+    execSync(`osascript -e 'tell application "${_appName}" to activate'`, { stdio: 'ignore', timeout: 3000 });
     _browserHidden = false;
     console.log(`[browser] 已恢复 ${_appName} 窗口`);
   } catch (e) {
@@ -326,10 +326,10 @@ function showBrowser() {
   }
 }
 
-// 确保任何退出路径都恢复浏览器窗口
+// 确保任何退出路径都恢复浏览器窗口（带超时，避免挂起）
 process.on('exit', () => {
   if (_browserHidden) {
-    try { execSync(`osascript -e 'tell application "${_appName}" to activate'`, { stdio: 'ignore' }); } catch {}
+    try { execSync(`osascript -e 'tell application "${_appName}" to activate'`, { stdio: 'ignore', timeout: 2000 }); } catch {}
   }
 });
 
