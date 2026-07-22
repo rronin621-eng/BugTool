@@ -41,8 +41,9 @@
    * @param {CanvasRenderingContext2D} ctx
    * @param {Object} ann 标注对象 { type, color, lineWidth, ... }
    * @param {boolean} [showTextBox=false] 文字标注是否绘制可拖拽虚线框
+   * @param {boolean} [isSelected=false] 文字标注是否被选中（高亮实线框）
    */
-  function drawAnnotation(ctx, ann, showTextBox) {
+  function drawAnnotation(ctx, ann, showTextBox, isSelected) {
     ctx.save();
     ctx.strokeStyle = ann.color;
     ctx.fillStyle = ann.color;
@@ -61,16 +62,24 @@
     } else if (ann.type === 'pen') {
       drawPenPath(ctx, ann.points, ann.lineWidth);
     } else if (ann.type === 'text') {
-      const fontSize = Math.max(14, ann.lineWidth * 5);
+      const fontSize = ann.fontSize || Math.max(14, ann.lineWidth * 5);
       ctx.font = `${fontSize}px sans-serif`;
       ctx.fillText(ann.text, ann.x, ann.y);
-      // 文字工具模式下，绘制虚线包围框提示可拖拽
-      if (showTextBox) {
+      // 选中状态：实线高亮框；文字工具模式：虚线提示框
+      if (isSelected || showTextBox) {
         const textWidth = ctx.measureText(ann.text).width;
         ctx.save();
-        ctx.strokeStyle = 'rgba(25, 118, 210, 0.7)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
+        if (isSelected) {
+          ctx.strokeStyle = '#3b82f6';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([]);
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.06)';
+          ctx.fillRect(ann.x - 4, ann.y - fontSize - 2, textWidth + 8, fontSize + 6);
+        } else {
+          ctx.strokeStyle = 'rgba(25, 118, 210, 0.7)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+        }
         ctx.strokeRect(ann.x - 4, ann.y - fontSize - 2, textWidth + 8, fontSize + 6);
         ctx.setLineDash([]);
         ctx.restore();

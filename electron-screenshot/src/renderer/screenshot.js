@@ -21,6 +21,10 @@ const state = {
   dragOffset: { x: 0, y: 0 },
   // 文字输入刚确认冷却标志，防止 blur 后立即触发新输入
   textJustConfirmed: false,
+  // 文字子栏设置
+  textFontSize: 20,       // 默认中号字
+  textColor: '#ff0000',  // 文字默认颜色
+  selectedTextIdx: -1,   // 当前选中的文字标注索引
   // Retina / HiDPI support
   dpr: window.devicePixelRatio || 1,
   canvasW: 0,  // logical (CSS) pixel width
@@ -42,6 +46,12 @@ const selectionSize = document.getElementById('selectionSize');
 const toolbar = document.getElementById('toolbar');
 const bugFormOverlay = document.getElementById('bugFormOverlay');
 const textInput = document.getElementById('textInput');
+
+// 文字子栏元素
+const textSubToolbar = document.getElementById('textSubToolbar');
+const textColorPicker = document.getElementById('textColorPicker');
+const btnTextEdit = document.getElementById('btnTextEdit');
+const btnTextDelete = document.getElementById('btnTextDelete');
 
 // BUG 弹窗内的预览 canvas
 const bugFormCanvas = document.getElementById('bugFormCanvas');
@@ -455,7 +465,7 @@ function hitTestTextAnnotation(mx, my) {
   for (let i = state.annotations.length - 1; i >= 0; i--) {
     const ann = state.annotations[i];
     if (ann.type !== 'text') continue;
-    const fontSize = Math.max(14, ann.lineWidth * 5);
+    const fontSize = ann.fontSize || Math.max(14, ann.lineWidth * 5);
     const textWidth = ann.text.length * fontSize * 0.6;
     const textHeight = fontSize;
     // 命中区域：文字包围盒 + 8px padding
@@ -483,9 +493,12 @@ function handleAnnotationStart(e) {
       state.textJustConfirmed = false;
       return;
     }
-    // 先检测是否命中已有文字，命中则拖拽
+    // 先检测是否命中已有文字，命中则选中并拖拽
     const hitIdx = hitTestTextAnnotation(mx, my);
     if (hitIdx !== -1) {
+      // 选中该文字
+      state.selectedTextIdx = hitIdx;
+      updateTextEditButtons();
       state.draggingTextIdx = hitIdx;
       state.dragOffset = {
         x: mx - state.annotations[hitIdx].x,
@@ -493,9 +506,13 @@ function handleAnnotationStart(e) {
       };
       state.isDrawing = false;
       drawCanvas.style.cursor = 'move';
+      redrawAnnotations();
       return;
     }
-    // 未命中，新建文字输入
+    // 未命中：取消选中，新建文字输入
+    state.selectedTextIdx = -1;
+    updateTextEditButtons();
+    redrawAnnotations();
     showTextInput(mx, my);
     state.isDrawing = false;
     return;
@@ -583,15 +600,19 @@ function redrawAnnotations() {
     drawCtx.strokeRect(x - 1, y - 1, w + 2, h + 2);
   }
 
-  // Redraw all annotations
-  for (const ann of state.annotations) {
-    drawAnnotation(drawCtx, ann);
+  // Redraw all annotations，选中文字高亮显示
+  for (let i = 0; i < state.annotations.length; i++) {
+    const ann = state.annotations[i];
+    const isSelected = (i === state.selectedTextIdx);
+    const showBox = state.currentTool === 'text';
+    drawAnnotation(drawCtx, ann, showBox, isSelected);
   }
 }
 
-function drawAnnotation(ctx, ann) {
-  // 复用共享标注模块；文字框仅在 text 工具激活时显示
-  window.AnnotateLib.drawAnnotation(ctx, ann, state.currentTool === 'text');
+function drawAnnotation(ctx, ann, showBox, isSelected) {
+  // 复用共享标注模块；文字框在 text 工具激活或被选中时显示
+  const show = showBox !== undefined ? showBox : (state.currentTool === 'text');
+  window.AnnotateLib.drawAnnotation(ctx, ann, show, isSelected);
 }
 
 function drawRectPreview(mx, my) {
@@ -634,11 +655,18 @@ function drawPenPath(ctx, points, lineWidth) {
 }
 
 // ============ Text Annotation ============
-function showTextInput(x, y) {
+function showTextInput(x, y, editIdx) {
+  // editIdx >= 0 表示编辑已有文字
+  const isEdit = (editIdx !== undefined && editIdx >= 0 && editIdx < state.annotations.length);
+  const existingAnn = isEdit ? state.annotations[editIdx] : null;
+
   textInput.classList.remove('hidden');
   textInput.style.left = x + 'px';
   textInput.style.top = y + 'px';
-  textInput.value = '';
+  textInput.value = isEdit ? existingAnn.text : '';
+  // 使用当前子栏字号设置输入框字体大小
+  textInput.style.fontSize = state.textFontSize + 'px';
+  textInput.style.color = state.textColor;
 
   // 降低窗口层级让输入法候选框能显示
   api.setWindowLevel('normal');
@@ -646,6 +674,7 @@ function showTextInput(x, y) {
   // 延迟 focus 避免 mouseup 事件立即触发 blur
   requestAnimationFrame(() => {
     textInput.focus();
+    if (isEdit) textInput.select();
   });
 
   let confirmed = false;
@@ -655,14 +684,23 @@ function showTextInput(x, y) {
     confirmed = true;
     const text = textInput.value.trim();
     if (text) {
-      state.annotations.push({
-        type: 'text',
-        x: x,
-        y: y + 18,
-        text: text,
-        color: state.drawColor,
-        lineWidth: state.lineWidth,
-      });
+      if (isEdit) {
+        // 编辑模式：更新已有文字
+        existingAnn.text = text;
+        existingAnn.color = state.textColor;
+        existingAnn.fontSize = state.textFontSize;
+      } else {
+        // 新建文字
+        state.annotations.push({
+          type: 'text',
+          x: x,
+          y: y + 18,
+          text: text,
+          color: state.textColor,
+          lineWidth: state.lineWidth,
+          fontSize: state.textFontSize,
+        });
+      }
       redrawAnnotations();
     }
     textInput.classList.add('hidden');
@@ -724,7 +762,7 @@ function exportAnnotatedImage() {
     ctx.scale(editScaleX, editScaleY);
     ctx.translate(-region.x, -region.y);
     for (const ann of state.annotations) {
-      drawAnnotation(ctx, ann);
+      drawAnnotation(ctx, ann, false);
     }
     ctx.restore();
 
@@ -752,7 +790,7 @@ function exportAnnotatedImage() {
   ctx.scale(scaleX, scaleY);
   ctx.translate(-x, -y);
   for (const ann of state.annotations) {
-    drawAnnotation(ctx, ann);
+    drawAnnotation(ctx, ann, false);
   }
   ctx.restore();
 
@@ -786,6 +824,70 @@ document.getElementById('lineWidth').addEventListener('change', (e) => {
 });
 document.getElementById('btnUndo').addEventListener('click', undoAnnotation);
 document.getElementById('btnClear').addEventListener('click', clearAnnotations);
+
+// 文字子栏：字号选择
+document.querySelectorAll('.text-size-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.text-size-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.textFontSize = parseInt(btn.dataset.size);
+    // 如果选中了文字，同步更新其字号
+    if (state.selectedTextIdx >= 0 && state.selectedTextIdx < state.annotations.length) {
+      const ann = state.annotations[state.selectedTextIdx];
+      if (ann.type === 'text') {
+        ann.fontSize = state.textFontSize;
+        redrawAnnotations();
+      }
+    }
+  });
+});
+
+// 文字子栏：颜色选择
+if (textColorPicker) {
+  textColorPicker.addEventListener('input', (e) => {
+    state.textColor = e.target.value;
+    // 如果选中了文字，同步更新其颜色
+    if (state.selectedTextIdx >= 0 && state.selectedTextIdx < state.annotations.length) {
+      const ann = state.annotations[state.selectedTextIdx];
+      if (ann.type === 'text') {
+        ann.color = state.textColor;
+        redrawAnnotations();
+      }
+    }
+  });
+}
+
+// 文字子栏：编辑/删除按钮
+if (btnTextEdit) {
+  btnTextEdit.addEventListener('click', editSelectedText);
+}
+if (btnTextDelete) {
+  btnTextDelete.addEventListener('click', deleteSelectedText);
+}
+
+// 双击文字进入编辑模式
+drawCanvas.addEventListener('dblclick', (e) => {
+  if (state.phase !== 'annotate' || state.currentTool !== 'text') return;
+  const hitIdx = hitTestTextAnnotation(e.clientX, e.clientY);
+  if (hitIdx !== -1) {
+    state.selectedTextIdx = hitIdx;
+    updateTextEditButtons();
+    redrawAnnotations();
+    editSelectedText();
+  }
+});
+
+// 键盘删除：选中文字后按 Delete/Backspace 删除
+document.addEventListener('keydown', (e) => {
+  if (state.phase !== 'annotate' || state.currentTool !== 'text') return;
+  if (state.selectedTextIdx < 0) return;
+  // 文本输入框激活时不拦截
+  if (document.activeElement === textInput) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    e.preventDefault();
+    deleteSelectedText();
+  }
+});
 document.getElementById('btnCopy').addEventListener('click', copyToClipboard);
 document.getElementById('btnDownload').addEventListener('click', saveToDesktop);
 document.getElementById('btnMultiShot').addEventListener('click', addToMultiShot);
@@ -925,17 +1027,56 @@ function setTool(tool) {
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
   const btnMap = { rect: 'btnRect', arrow: 'btnArrow', pen: 'btnPen', text: 'btnText' };
   document.getElementById(btnMap[tool])?.classList.add('active');
+
+  // 文字工具激活时显示子栏，否则隐藏并取消选中
+  if (tool === 'text') {
+    textSubToolbar.classList.remove('hidden');
+  } else {
+    textSubToolbar.classList.add('hidden');
+    state.selectedTextIdx = -1;
+    updateTextEditButtons();
+    redrawAnnotations();
+  }
+}
+
+// 更新编辑/删除按钮状态
+function updateTextEditButtons() {
+  const hasSelection = state.selectedTextIdx >= 0 && state.selectedTextIdx < state.annotations.length;
+  if (btnTextEdit) btnTextEdit.disabled = !hasSelection;
+  if (btnTextDelete) btnTextDelete.disabled = !hasSelection;
+}
+
+// 编辑选中文字
+function editSelectedText() {
+  if (state.selectedTextIdx < 0) return;
+  const ann = state.annotations[state.selectedTextIdx];
+  if (!ann || ann.type !== 'text') return;
+  // 用文字原始位置弹出编辑框
+  showTextInput(ann.x, ann.y - 18, state.selectedTextIdx);
+}
+
+// 删除选中文字
+function deleteSelectedText() {
+  if (state.selectedTextIdx < 0) return;
+  state.annotations.splice(state.selectedTextIdx, 1);
+  state.selectedTextIdx = -1;
+  updateTextEditButtons();
+  redrawAnnotations();
 }
 
 function undoAnnotation() {
   if (state.annotations.length > 0) {
     state.annotations.pop();
+    state.selectedTextIdx = -1;
+    updateTextEditButtons();
     redrawAnnotations();
   }
 }
 
 function clearAnnotations() {
   state.annotations = [];
+  state.selectedTextIdx = -1;
+  updateTextEditButtons();
   redrawAnnotations();
 }
 

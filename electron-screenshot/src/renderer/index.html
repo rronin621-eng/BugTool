@@ -65,6 +65,22 @@
     <button id="btnConfirm" class="tool-btn confirm-btn small" title="完成（复制到剪贴板）">✓</button>
   </div>
 
+  <!-- 文字工具子栏 -->
+  <div id="textSubToolbar" class="text-sub-toolbar hidden">
+    <span class="sub-label">字号</span>
+    <button class="text-size-btn" data-size="14" title="小号字">小</button>
+    <button class="text-size-btn active" data-size="20" title="中号字">中</button>
+    <button class="text-size-btn" data-size="28" title="大号字">大</button>
+    <span class="toolbar-divider"></span>
+    <label class="color-picker" title="文字颜色">
+      <input type="color" id="textColorPicker" value="#ff0000">
+      <span class="color-swatch" style="background:#ff0000"></span>
+    </label>
+    <span class="toolbar-divider"></span>
+    <button id="btnTextEdit" class="text-action-btn" title="编辑选中文字" disabled>✏️</button>
+    <button id="btnTextDelete" class="text-action-btn" title="删除选中文字" disabled>🗑</button>
+  </div>
+
   <!-- BUG录入弹窗 -->
   <div id="bugFormOverlay" class="bug-form-overlay hidden">
     <div class="bug-form-container">
