@@ -124,10 +124,10 @@ function buildPendingDefect(
   imageFileNames: string[]
 ): Record<string, any> {
   const form = data.dmpForm;
-  const moduleName = form.module_path || '通用模块';
+  const moduleName = '灵基';
   // 没有本地用户姓名，使用处理人工号作为处理人搜索词
   const handlerName = form.handler_id || data.assignee_name || data.reporter_name || '';
-  const title = `【待修改】【${moduleName}】${data.title}`;
+  const title = `【${moduleName}】${data.title}`;
   const noteLines: string[] = [];
   if (data.description) noteLines.push(data.description);
   if (form.note_extra) noteLines.push(form.note_extra);
