@@ -195,13 +195,16 @@ export function setupIpcHandlers(apiBaseUrl: string) {
     // 1) 检查 DMP 连接
     const testResult = await testDmpConnection();
     if (!testResult.success) {
+      showToastWindow('未连接 DMP，请先登录并打开缺陷列表', 4000);
       return { success: false, message: '未连接 DMP，请先登录并打开缺陷列表' };
     }
     if (!testResult.isInDefectList) {
+      showToastWindow('请先打开缺陷列表页', 4000);
       return { success: false, message: '请先打开缺陷列表页' };
     }
 
     // 2) 提交到 DMP
+    showToastWindow('正在提交到 DMP...', 120000);
     let browserResult: { success: boolean; message: string };
     try {
       browserResult = await submitBugViaBrowser({
@@ -228,6 +231,7 @@ export function setupIpcHandlers(apiBaseUrl: string) {
 
     // 3) 提交成功后从浮窗移除已提交的图片
     if (browserResult.success) {
+      showToastWindow(`DMP 缺陷创建成功`, 4000);
       // 降序删除，避免索引错位
       indices.sort((a, b) => b - a).forEach(i => removeImage(i));
       if (getCount() === 0) {
@@ -235,6 +239,8 @@ export function setupIpcHandlers(apiBaseUrl: string) {
       } else {
         updateStackWindow();
       }
+    } else {
+      showToastWindow(`DMP 创建失败：${browserResult.message}`, 6000);
     }
 
     return browserResult;
