@@ -175,7 +175,7 @@ export function openCombineWindow(): void {
   combineWindow = new BrowserWindow({
     width: winW,
     height: winH,
-    frame: false,
+    titleBarStyle: 'hiddenInset',
     transparent: false,
     alwaysOnTop: true,
     skipTaskbar: false,
