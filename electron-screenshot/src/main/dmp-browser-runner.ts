@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, execSync } from 'child_process';
 import { getDmpBrowserConfig } from './dmp-browser-config';
+import { showToastWindow } from './toast-window';
 
 // 用户提供的 DMP 入口链接
 export const DMP_ENTRY_URL = 'https://devops.kingdee.com:8000/?formId=home_page&code=17845991817a3d4cc6b5ea9ea7b8dced';
@@ -240,7 +241,17 @@ export async function submitBugViaBrowser(data: DmpBrowserSubmitData): Promise<D
 
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      // 实时检测 __TOAST__ 标记，调用屏幕 toast 显示
+      const lines = text.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('__TOAST__')) {
+          showToastWindow(line.slice(9).trim(), 120000);
+        }
+      }
+    });
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
     child.on('error', (err) => {

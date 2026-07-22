@@ -406,6 +406,7 @@ try {
     .map(f => 'images/' + f).filter(f => fs.existsSync(f));
   let uploadedCount = 0;
   if (imgFiles.length > 0) {
+    console.log('__TOAST__正在添加截图到附件');
     console.log(`[附件] 上传 ${imgFiles.length} 张图片（校验+重试）`);
     for (const f of imgFiles) {
       const fname = f.split('/').pop();
