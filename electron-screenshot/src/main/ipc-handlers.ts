@@ -8,6 +8,7 @@ import { submitBugToDmp, DmpSubmitData } from './dmp-submitter';
 import { getDmpConfig } from './dmp-config';
 import { getDmpBrowserConfig } from './dmp-browser-config';
 import { submitBugViaBrowser, DmpBrowserSubmitData, launchDmpBrowser, testDmpConnection } from './dmp-browser-runner';
+import { showToastWindow, closeToastWindow } from './toast-window';
 import {
   addImage, removeImage, getImages, clearImages, getCount, getMaxImages,
   getTextInfo, setCombineSelected, getSelectedImageDataUrls, replaceImage,
@@ -633,12 +634,8 @@ export function setupIpcHandlers(apiBaseUrl: string) {
     dmpForm: any;
     mode?: 'auto' | 'manual';
   }) => {
-    // 显示浮窗并展示提交中提示
-    showStackWindow();
-    // 等待浮窗加载完成后发送 toast
-    setTimeout(() => {
-      showToastToStack('正在提交到 DMP...', 120000);
-    }, 300);
+    // 屏幕下方 toast 显示提交中提示
+    showToastWindow('正在提交到 DMP...', 120000);
 
     // 仅提交到 DMP 浏览器自动化系统
     let browserResult: { success: boolean; devopsId?: string; message: string } | null = null;
@@ -655,25 +652,13 @@ export function setupIpcHandlers(apiBaseUrl: string) {
     }
 
     if (browserResult.success) {
-      showToastToStack(`DMP 缺陷创建成功：${browserResult.devopsId || ''}`, 4000);
-      // 浮窗无图片时，延迟关闭
-      if (getCount() === 0) {
-        setTimeout(() => {
-          closeStackWindow();
-        }, 4000);
-      }
+      showToastWindow(`DMP 缺陷创建成功：${browserResult.devopsId || ''}`, 4000);
       return {
         success: true,
         message: `DMP 缺陷创建成功：${browserResult.devopsId || ''}`,
       };
     } else {
-      showToastToStack(`DMP 创建失败：${browserResult.message}`, 6000);
-      // 浮窗无图片时，延迟关闭
-      if (getCount() === 0) {
-        setTimeout(() => {
-          closeStackWindow();
-        }, 6000);
-      }
+      showToastWindow(`DMP 创建失败：${browserResult.message}`, 6000);
       return {
         success: false,
         message: `DMP 创建失败：${browserResult.message}`,
