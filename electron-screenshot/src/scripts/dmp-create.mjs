@@ -391,7 +391,14 @@ try {
     console.log('[6/6] 关联故事:', storyValue || '(跳过—未提供值)');
     if (storyValue) await setStory(page, storyValue);
   } else {
-    console.log('\n[manual] 不自动填字段，仅上传截图，请手动填写其他信息。');
+    console.log('\n[manual] 自动填写标题和描述，请手动补充其他字段。');
+    await titleInput.click();
+    await titleInput.fill(defect.title);
+
+    await page.evaluate((html) => {
+      const ed = window.tinymce?.activeEditor || Object.values(window.tinymce?.editors || {})[0];
+      if (ed) ed.setContent(html);
+    }, '<p>' + (defect.desc || '').replace(/\n/g, '</p><p>') + '</p>');
   }
 
   // [附件] 上传图片 —— 校验文件名出现 + 失败重试 + 换 input 索引（绝不静默丢失/传错位置）

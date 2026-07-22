@@ -796,27 +796,7 @@ async function quickManualSubmit() {
   const hasText = textAnnotations.length > 0;
   const textContent = textAnnotations.map(a => a.text).join('\n');
 
-  // 1. 先保存到右下角浮窗
-  api.addToMultiShot({ dataUrl, hasText, textContent });
-  showToast('已保存到暂存浮窗');
-
-  // 2. 检查 DMP 连接
-  const testResult = await api.testDmpConnection();
-  if (!testResult.success) {
-    showToast('未连接 DMP，请先登录并打开缺陷列表');
-    await api.launchDmpBrowser();
-    api.cancel();
-    return;
-  }
-
-  // 3. 已连接但不在缺陷列表页
-  if (!testResult.isInDefectList) {
-    showToast('请打开缺陷列表页');
-    api.cancel();
-    return;
-  }
-
-  // 4. 生成标题和描述：有文字标注时优先使用，否则自动生成标题
+  // 生成标题和描述：有文字标注时优先使用，否则自动生成标题
   let title;
   let description = '';
   if (textAnnotations.length > 0) {
@@ -829,28 +809,76 @@ async function quickManualSubmit() {
     title = `DMP缺陷 - ${now.toLocaleString('zh-CN', { hour12: false })}`;
   }
 
-  // 5. 已连接且在缺陷列表页，后台执行手动提交
-  api.submitBug({
-    title,
-    description,
-    imageDataUrl: dataUrl,
-    mode: 'manual',
-    dmpForm: {
-      project_name: '',
-      module_path: '',
-      defect_type: '功能缺陷',
-      discovery_stage: 'dev测试',
-      priority: '中',
-      source: '测试',
-      test_env: '',
-      story_value: '',
-      handler_id: '',
-      note_extra: '',
-    }
-  });
+  // 1. 检查 DMP 连接
+  const testResult = await api.testDmpConnection();
+  if (!testResult.success) {
+    // 未连接：保存到浮窗、打开 DMP、提示用户
+    api.addToMultiShot({ dataUrl, hasText, textContent });
+    showToast('未连接 DMP，请先登录并打开缺陷列表');
+    await api.launchDmpBrowser();
+    api.cancel();
+    return;
+  }
 
-  // 6. 关闭截图窗口
-  api.cancel();
+  // 2. 已连接但不在缺陷列表页
+  if (!testResult.isInDefectList) {
+    api.addToMultiShot({ dataUrl, hasText, textContent });
+    showToast('请打开缺陷列表页');
+    api.cancel();
+    return;
+  }
+
+  // 3. 已连接且在缺陷列表页：直接提交，不保存浮窗
+  showToast('正在提交到 DMP...');
+  const submitBtn = document.getElementById('btnBug');
+  const originalText = submitBtn ? submitBtn.textContent : '';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '提交中...';
+  }
+
+  try {
+    const result = await api.submitBug({
+      title,
+      description,
+      imageDataUrl: dataUrl,
+      mode: 'manual',
+      dmpForm: {
+        project_name: '',
+        module_path: '',
+        defect_type: '功能缺陷',
+        discovery_stage: 'dev测试',
+        priority: '中',
+        source: '测试',
+        test_env: '',
+        story_value: '',
+        handler_id: '',
+        note_extra: '',
+      }
+    });
+
+    if (result && result.success) {
+      showToast(result.message || '提交成功');
+      api.cancel();
+    } else {
+      // 提交失败：保存到浮窗，提示用户
+      api.addToMultiShot({ dataUrl, hasText, textContent });
+      const errMsg = (result && result.message) || '提交失败';
+      showToast(errMsg.length > 50 ? errMsg.slice(0, 50) + '...' : errMsg);
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+      }
+    }
+  } catch (e) {
+    // 提交异常：保存到浮窗，提示用户
+    api.addToMultiShot({ dataUrl, hasText, textContent });
+    showToast('提交异常，已保存到浮窗');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
+  }
 }
 
 document.getElementById('btnBug').addEventListener('click', quickManualSubmit);
