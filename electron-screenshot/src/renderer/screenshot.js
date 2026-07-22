@@ -789,7 +789,7 @@ document.getElementById('btnClear').addEventListener('click', clearAnnotations);
 document.getElementById('btnCopy').addEventListener('click', copyToClipboard);
 document.getElementById('btnDownload').addEventListener('click', saveToDesktop);
 document.getElementById('btnMultiShot').addEventListener('click', addToMultiShot);
-// 记录按钮：一键快速手动提交到 DMP
+// 提BUG按钮：一键快速手动提交到 DMP
 async function quickManualSubmit() {
   const dataUrl = exportAnnotatedImage();
   const textAnnotations = state.annotations.filter(a => a.type === 'text');

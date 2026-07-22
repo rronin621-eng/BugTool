@@ -157,12 +157,12 @@ function updateCombineBtn() {
   } else {
     elBtnCombine.textContent = '组合图';
   }
-  // 同步「记录」按钮状态：选中 1 张及以上即可提交
+  // 同步「提BUG」按钮状态：选中 1 张及以上即可提交
   elBtnSubmit.disabled = count < 1 || elBtnSubmit.dataset.loading === '1';
   if (count >= 1) {
-    elBtnSubmit.textContent = `记录 (${count})`;
+    elBtnSubmit.textContent = `提BUG (${count})`;
   } else {
-    elBtnSubmit.textContent = '记录';
+    elBtnSubmit.textContent = '提BUG';
   }
   // 同步选中状态到主进程
   api.setCombineSelected(Array.from(selectedSet).sort((a, b) => a - b));
@@ -186,7 +186,7 @@ function showToast(msg, duration = 3000) {
   }, duration);
 }
 
-// 记录按钮：提交选中的截图到 DMP（支持单选和多选）
+// 提BUG按钮：提交选中的截图到 DMP（支持单选和多选）
 elBtnSubmit.addEventListener('click', async () => {
   if (selectedSet.size < 1) return;
   if (elBtnSubmit.dataset.loading === '1') return;
