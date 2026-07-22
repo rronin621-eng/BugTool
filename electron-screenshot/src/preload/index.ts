@@ -109,6 +109,9 @@ contextBridge.exposeInMainWorld('stackAPI', {
   combineSelected: () => ipcRenderer.send('multishot:combine-selected'),
   previewImage: (index: number) => ipcRenderer.invoke('multishot:preview', index),
   editImage: (index: number) => ipcRenderer.invoke('multishot:edit', index),
+  submitDmp: (indices: number[]) => ipcRenderer.invoke('multishot:submit-dmp', { indices }),
+  testDmpConnection: () => ipcRenderer.invoke('dmp-browser:test'),
+  launchDmpBrowser: () => ipcRenderer.invoke('dmp-browser:launch'),
 });
 
 // 录屏 API

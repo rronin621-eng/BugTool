@@ -6,6 +6,8 @@ const elThumbList = document.getElementById('thumbList');
 const elCount = document.getElementById('count');
 const elBtnCombine = document.getElementById('btnCombine');
 const elBtnClear = document.getElementById('btnClear');
+const elBtnSubmit = document.getElementById('btnSubmit');
+const elToast = document.getElementById('toast');
 
 let currentImages = [];
 let currentTextInfo = [];
@@ -151,9 +153,16 @@ function updateCombineBtn() {
   const count = selectedSet.size;
   elBtnCombine.disabled = count < 2;
   if (count >= 2) {
-    elBtnCombine.textContent = `生成组合图 (${count})`;
+    elBtnCombine.textContent = `组合图 (${count})`;
   } else {
-    elBtnCombine.textContent = '生成组合图';
+    elBtnCombine.textContent = '组合图';
+  }
+  // 同步「记录」按钮状态：选中 1 张及以上即可提交
+  elBtnSubmit.disabled = count < 1 || elBtnSubmit.dataset.loading === '1';
+  if (count >= 1) {
+    elBtnSubmit.textContent = `记录 (${count})`;
+  } else {
+    elBtnSubmit.textContent = '记录';
   }
   // 同步选中状态到主进程
   api.setCombineSelected(Array.from(selectedSet).sort((a, b) => a - b));
@@ -162,6 +171,47 @@ function updateCombineBtn() {
 elBtnCombine.addEventListener('click', () => {
   if (selectedSet.size >= 2) {
     api.combineSelected();
+  }
+});
+
+// Toast 提示
+let toastTimer = null;
+function showToast(msg, duration = 3000) {
+  if (!elToast) return;
+  elToast.textContent = msg;
+  elToast.classList.remove('hidden');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    elToast.classList.add('hidden');
+  }, duration);
+}
+
+// 记录按钮：提交选中的截图到 DMP（支持单选和多选）
+elBtnSubmit.addEventListener('click', async () => {
+  if (selectedSet.size < 1) return;
+  if (elBtnSubmit.dataset.loading === '1') return;
+
+  const indices = Array.from(selectedSet).sort((a, b) => a - b);
+  const originalText = elBtnSubmit.textContent;
+  elBtnSubmit.dataset.loading = '1';
+  elBtnSubmit.disabled = true;
+  elBtnSubmit.textContent = '提交中...';
+
+  try {
+    const result = await api.submitDmp(indices);
+    if (result && result.success) {
+      showToast(result.message || '提交成功');
+      selectedSet.clear();
+    } else {
+      const errMsg = (result && result.message) || '提交失败';
+      showToast(errMsg.length > 60 ? errMsg.slice(0, 60) + '...' : errMsg, 4000);
+    }
+  } catch (e) {
+    showToast('提交异常', 4000);
+  } finally {
+    elBtnSubmit.dataset.loading = '';
+    elBtnSubmit.textContent = originalText;
+    updateCombineBtn();
   }
 });
 

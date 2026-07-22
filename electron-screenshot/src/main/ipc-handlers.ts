@@ -62,6 +62,7 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   safeRemove('record:submit-bug');
   safeRemove('dmp-browser:launch');
   safeRemove('dmp-browser:test');
+  safeRemove('multishot:submit-dmp');
 
   // ============================================================
   // 多图功能 IPC
@@ -160,6 +161,82 @@ export function setupIpcHandlers(apiBaseUrl: string) {
   ipcMain.on('multishot:clear', () => {
     clearImages();
     closeStackWindow();
+  });
+
+  // 从浮窗提交选中的截图到 DMP（支持单选和多选）
+  ipcMain.handle('multishot:submit-dmp', async (_event, data: { indices: number[] }) => {
+    const allImages = getImages();
+    const allTextInfo = getTextInfo();
+    const indices = (data.indices || []).filter(i => i >= 0 && i < allImages.length);
+    if (indices.length === 0) {
+      return { success: false, message: '未选择图片' };
+    }
+
+    const selectedImages = indices.map(i => allImages[i]);
+    const selectedTexts = indices.map(i => allTextInfo[i]);
+
+    // 生成标题和描述：有文字标注时优先使用，否则自动生成标题
+    const allTextContents = selectedTexts
+      .filter(t => t && t.hasText && t.textContent)
+      .map(t => t.textContent);
+    let title: string;
+    let description = '';
+    if (allTextContents.length > 0) {
+      title = allTextContents[0].trim();
+      if (allTextContents.length > 1) {
+        description = allTextContents.join('\n');
+      }
+    } else {
+      const now = new Date();
+      title = `DMP缺陷 - ${now.toLocaleString('zh-CN', { hour12: false })}`;
+    }
+
+    // 1) 检查 DMP 连接
+    const testResult = await testDmpConnection();
+    if (!testResult.success) {
+      return { success: false, message: '未连接 DMP，请先登录并打开缺陷列表' };
+    }
+    if (!testResult.isInDefectList) {
+      return { success: false, message: '请先打开缺陷列表页' };
+    }
+
+    // 2) 提交到 DMP
+    let browserResult: { success: boolean; message: string };
+    try {
+      browserResult = await submitBugViaBrowser({
+        title,
+        description,
+        imageDataUrls: selectedImages,
+        dmpForm: {
+          project_name: '',
+          module_path: '',
+          defect_type: '功能缺陷',
+          discovery_stage: 'dev测试',
+          priority: '中',
+          source: '测试',
+          test_env: '',
+          story_value: '',
+          handler_id: '',
+          note_extra: '',
+        },
+        mode: 'manual',
+      });
+    } catch (err: any) {
+      browserResult = { success: false, message: err.message || 'DMP 浏览器自动化异常' };
+    }
+
+    // 3) 提交成功后从浮窗移除已提交的图片
+    if (browserResult.success) {
+      // 降序删除，避免索引错位
+      indices.sort((a, b) => b - a).forEach(i => removeImage(i));
+      if (getCount() === 0) {
+        closeStackWindow();
+      } else {
+        updateStackWindow();
+      }
+    }
+
+    return browserResult;
   });
 
   // 打开组合编辑器（使用所有图片，向后兼容）

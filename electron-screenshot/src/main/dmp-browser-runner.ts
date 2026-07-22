@@ -34,7 +34,8 @@ export interface DmpBrowserSubmitData {
   reporter_name?: string;
   assignee_name?: string;
   env_url?: string;
-  imageDataUrl: string; // data:image/png;base64,...
+  imageDataUrl?: string; // data:image/png;base64,... （单图，向后兼容）
+  imageDataUrls?: string[]; // 多图模式：data:image/png;base64,... 数组
   dmpForm: DmpFormValues;
   mode?: 'auto' | 'manual';
 }
@@ -120,7 +121,7 @@ function generateConfigYaml(skillDir: string, form: DmpFormValues, handlerName: 
 function buildPendingDefect(
   row: number,
   data: DmpBrowserSubmitData,
-  imageFileName: string
+  imageFileNames: string[]
 ): Record<string, any> {
   const form = data.dmpForm;
   const moduleName = form.module_path || '通用模块';
@@ -139,7 +140,7 @@ function buildPendingDefect(
     handler_name: handlerName,
     handler_id: form.handler_id || '',
     note: noteLines.join('\n'),
-    screenshot_files: [imageFileName],
+    screenshot_files: imageFileNames,
     design_ref_files: [],
     status: 'pending',
   };
@@ -171,13 +172,25 @@ export async function submitBugViaBrowser(data: DmpBrowserSubmitData): Promise<D
   const pendingPath = path.join(skillDir, 'pending_defects.json');
   ensureDir(skillImagesDir);
 
-  // 1) 保存截图到 skill 的 images 目录
-  const imageFileName = `screenshot_${Date.now()}.png`;
-  const imagePath = path.join(skillImagesDir, imageFileName);
-  try {
-    fs.writeFileSync(imagePath, dataUrlToBuffer(data.imageDataUrl));
-  } catch (err: any) {
-    return { success: false, message: `保存截图失败：${err.message}` };
+  // 1) 保存截图到 skill 的 images 目录（支持单图和多图）
+  const dataUrls = data.imageDataUrls && data.imageDataUrls.length > 0
+    ? data.imageDataUrls
+    : (data.imageDataUrl ? [data.imageDataUrl] : []);
+  if (dataUrls.length === 0) {
+    return { success: false, message: '未提供截图数据' };
+  }
+
+  const imageFileNames: string[] = [];
+  const ts = Date.now();
+  for (let i = 0; i < dataUrls.length; i++) {
+    const fname = `screenshot_${ts}_${i}.png`;
+    const imgPath = path.join(skillImagesDir, fname);
+    try {
+      fs.writeFileSync(imgPath, dataUrlToBuffer(dataUrls[i]));
+      imageFileNames.push(fname);
+    } catch (err: any) {
+      return { success: false, message: `保存截图失败：${err.message}` };
+    }
   }
 
   // 2) 生成/覆盖 config.yaml（使用弹窗中的 DMP 字段）
@@ -196,7 +209,7 @@ export async function submitBugViaBrowser(data: DmpBrowserSubmitData): Promise<D
   }
 
   const row = pending.length > 0 ? Math.max(...pending.map((d) => d.row || 0)) + 1 : 1;
-  const defect = buildPendingDefect(row, data, imageFileName);
+  const defect = buildPendingDefect(row, data, imageFileNames);
   pending.push(defect);
   fs.writeFileSync(pendingPath, JSON.stringify(pending, null, 2));
 

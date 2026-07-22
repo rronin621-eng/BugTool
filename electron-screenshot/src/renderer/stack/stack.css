@@ -269,6 +269,30 @@ body {
   cursor: not-allowed;
 }
 
+#btnSubmit {
+  flex: 1;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: #a6e3a1;
+  color: #11111b;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+#btnSubmit:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+#btnSubmit:disabled {
+  background: #45475a;
+  color: #6c7086;
+  cursor: not-allowed;
+}
+
 #btnClear {
   height: 30px;
   padding: 0 12px;
@@ -286,4 +310,30 @@ body {
   background: #f38ba8;
   color: #11111b;
   border-color: #f38ba8;
+}
+
+/* Toast 提示 */
+.toast {
+  position: fixed;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(17, 17, 27, 0.95);
+  color: #cdd6f4;
+  font-size: 11px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid #313244;
+  z-index: 9999;
+  max-width: 200px;
+  text-align: center;
+  line-height: 1.5;
+  word-break: break-all;
+  transition: opacity 0.2s;
+  opacity: 1;
+}
+
+.toast.hidden {
+  opacity: 0;
+  pointer-events: none;
 }
