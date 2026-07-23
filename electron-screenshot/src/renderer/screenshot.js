@@ -800,12 +800,12 @@ function exportAnnotatedImage() {
 
 // ============ Toast ============
 let _toastTimer = null;
-function showToast(msg) {
+function showToast(msg, duration = 3500) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.remove('hidden');
   if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => { el.classList.add('hidden'); }, 2000);
+  _toastTimer = setTimeout(() => { el.classList.add('hidden'); }, duration);
 }
 
 // ============ Toolbar Event Handlers ============
@@ -922,7 +922,7 @@ async function quickManualSubmit() {
     // 未连接：保存到浮窗、打开 DMP、提示用户
     _suppressMultiShotToast = true;
     api.addToMultiShot({ dataUrl, hasText, textContent });
-    showToast('未登录 DMP，请登录并打开缺陷列表后再提BUG');
+    showToast('请登录 DMP 并打开缺陷列表后再提BUG');
     await api.launchDmpBrowser();
     api.cancel();
     return;
@@ -932,7 +932,8 @@ async function quickManualSubmit() {
   if (!testResult.isInDefectList) {
     _suppressMultiShotToast = true;
     api.addToMultiShot({ dataUrl, hasText, textContent });
-    showToast('未打开缺陷列表页，请先在 DMP 打开缺陷列表');
+    showToast('请登录 DMP 并打开缺陷列表后再提BUG');
+    await api.launchDmpBrowser();
     api.cancel();
     return;
   }
