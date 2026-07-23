@@ -154,3 +154,14 @@ contextBridge.exposeInMainWorld('settingsAPI', {
   saveShortcut: (accelerator: string) => ipcRenderer.invoke('settings:save-shortcut', accelerator),
 });
 
+// 权限引导 API
+contextBridge.exposeInMainWorld('permissionAPI', {
+  getPermissions: () => ipcRenderer.invoke('permission:get-status'),
+  openSystemPreferences: (type: string) => ipcRenderer.invoke('permission:open-preferences', type),
+  requestPermission: (type: string) => ipcRenderer.invoke('permission:request', type),
+  continue: () => ipcRenderer.send('permission:continue'),
+  onPermissionUpdate: (callback: (status: any) => void) => {
+    ipcRenderer.on('permission:update', (_e, status) => callback(status));
+  },
+});
+

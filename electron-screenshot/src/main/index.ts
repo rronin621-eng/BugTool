@@ -8,6 +8,15 @@ import { toggleBugViewer, setViewerAlwaysOnTop } from './bug-viewer-window';
 import { registerScreenshotWindow, destroyAllScreenshotWindows, getScreenshotWindowCount } from './screenshot-registry';
 import { loadShortcutConfig, saveShortcutConfig, getDefaultShortcutConfig, displayAccelerator } from './shortcut-config';
 import { openSettingsWindow } from './settings-window';
+import {
+  getAllPermissions,
+  getMissingPermissions,
+  allRequiredPermissionsGranted,
+  openSystemPreferences,
+  requestScreenRecording,
+  requestAccessibility,
+} from './permission-checker';
+import { openPermissionWindow, closePermissionWindow, isPermissionWindowOpen } from './permission-window';
 
 // Single instance lock - MUST be called before app.whenReady
 const gotLock = app.requestSingleInstanceLock();
@@ -154,12 +163,54 @@ function showNotification(title: string, body: string) {
   }
 }
 
+function broadcastPermissionStatus() {
+  const permissions = getAllPermissions();
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('permission:update', permissions);
+    }
+  });
+}
+
+function setupPermissionIpc() {
+  ipcMain.handle('permission:get-status', () => {
+    return getAllPermissions();
+  });
+
+  ipcMain.handle('permission:open-preferences', (_event, type: string) => {
+    if (type === 'screen' || type === 'accessibility') {
+      openSystemPreferences(type);
+    }
+  });
+
+  ipcMain.handle('permission:request', (_event, type: string) => {
+    if (type === 'screen') {
+      const granted = requestScreenRecording();
+      broadcastPermissionStatus();
+      return granted;
+    }
+    if (type === 'accessibility') {
+      const granted = requestAccessibility();
+      broadcastPermissionStatus();
+      return granted;
+    }
+    return false;
+  });
+}
+
 async function startScreenshot() {
   if (getScreenshotWindowCount() > 0 || screenshotWindow) {
     screenshotWindow?.focus();
     return;
   }
   if (screenshotInProgress) return;
+
+  // 截图前强制检查屏幕录制权限
+  if (!allRequiredPermissionsGranted()) {
+    openPermissionWindow();
+    return;
+  }
+
   screenshotInProgress = true;
 
   try {
@@ -344,6 +395,7 @@ async function startScreenshot() {
 }
 
 let registeredAccelerator = '';
+let appInitializationFinished = false;
 
 function registerShortcut(accelerator: string) {
   globalShortcut.unregisterAll();
@@ -366,16 +418,9 @@ function getRegisteredAccelerator(): string {
   return registeredAccelerator || getDefaultShortcutConfig().accelerator;
 }
 
-app.whenReady().then(async () => {
-  // 打包模式：先拉起内置后端并等待就绪
-  startBackend();
-  if (app.isPackaged) {
-    const ok = await waitForBackend();
-    if (!ok) {
-      console.error('[Backend] failed to become ready');
-      new Notification({ title: 'BUG工具', body: '后端服务启动失败，请重试或联系支持。' }).show();
-    }
-  }
+function finishAppInitialization() {
+  if (appInitializationFinished) return;
+  appInitializationFinished = true;
 
   createTray();
   const shortcutConfig = loadShortcutConfig();
@@ -422,17 +467,6 @@ app.whenReady().then(async () => {
     e.preventDefault();
   });
 
-  // Log screen recording permission status (no blocking dialog)
-  if (process.platform === 'darwin') {
-    const { systemPreferences } = require('electron');
-    const status = systemPreferences.getMediaAccessStatus('screen');
-    console.log(`[Permission] Screen recording status: ${status}`);
-    if (status !== 'granted') {
-      console.warn('[Permission] Screen recording not granted. Screenshot may fail.');
-      console.warn('[Permission] Go to: System Preferences → Privacy & Security → Screen Recording');
-    }
-  }
-
   console.log(`[App] BUG截图工具已启动，按 ${displayAccelerator(getRegisteredAccelerator())} 截图`);
 
   // 注册屏幕采集处理器：录屏时 getDisplayMedia 自动选择主屏
@@ -446,6 +480,58 @@ app.whenReady().then(async () => {
       callback({});
     });
   });
+}
+
+async function ensurePermissionsThenInit() {
+  // 非 macOS 平台无需检查这些权限
+  if (process.platform !== 'darwin') {
+    finishAppInitialization();
+    return;
+  }
+
+  setupPermissionIpc();
+
+  if (allRequiredPermissionsGranted()) {
+    finishAppInitialization();
+    return;
+  }
+
+  const missing = getMissingPermissions();
+  console.warn('[Permission] 缺少必要权限:', missing.map((p) => p.name).join(', '));
+
+  const win = openPermissionWindow();
+
+  const onContinue = () => {
+    closePermissionWindow();
+    finishAppInitialization();
+  };
+
+  ipcMain.once('permission:continue', onContinue);
+
+  // 如果用户直接关闭权限窗口，根据当前权限状态决定继续初始化还是退出应用
+  win.on('closed', () => {
+    ipcMain.removeListener('permission:continue', onContinue);
+    if (allRequiredPermissionsGranted()) {
+      finishAppInitialization();
+    } else {
+      console.log('[Permission] 用户关闭权限窗口且权限未授予，应用退出');
+      app.quit();
+    }
+  });
+}
+
+app.whenReady().then(async () => {
+  // 打包模式：先拉起内置后端并等待就绪
+  startBackend();
+  if (app.isPackaged) {
+    const ok = await waitForBackend();
+    if (!ok) {
+      console.error('[Backend] failed to become ready');
+      new Notification({ title: 'BUG工具', body: '后端服务启动失败，请重试或联系支持。' }).show();
+    }
+  }
+
+  await ensurePermissionsThenInit();
 });
 
 app.on('before-quit', () => {
