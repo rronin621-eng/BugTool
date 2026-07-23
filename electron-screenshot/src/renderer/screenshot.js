@@ -892,6 +892,10 @@ document.addEventListener('keydown', (e) => {
 document.getElementById('btnCopy').addEventListener('click', copyToClipboard);
 document.getElementById('btnDownload').addEventListener('click', saveToDesktop);
 document.getElementById('btnMultiShot').addEventListener('click', addToMultiShot);
+
+// 标记：由「提BUG」流程触发的多图添加，不显示「已加入多图」toast
+let _suppressMultiShotToast = false;
+
 // 提BUG按钮：一键快速手动提交到 DMP
 async function quickManualSubmit() {
   const dataUrl = exportAnnotatedImage();
@@ -916,8 +920,9 @@ async function quickManualSubmit() {
   const testResult = await api.testDmpConnection();
   if (!testResult.success) {
     // 未连接：保存到浮窗、打开 DMP、提示用户
+    _suppressMultiShotToast = true;
     api.addToMultiShot({ dataUrl, hasText, textContent });
-    showToast('未连接 DMP，请先登录并打开缺陷列表');
+    showToast('未登录 DMP，请登录并打开缺陷列表后再提BUG');
     await api.launchDmpBrowser();
     api.cancel();
     return;
@@ -925,8 +930,9 @@ async function quickManualSubmit() {
 
   // 2. 已连接但不在缺陷列表页
   if (!testResult.isInDefectList) {
+    _suppressMultiShotToast = true;
     api.addToMultiShot({ dataUrl, hasText, textContent });
-    showToast('请打开缺陷列表页');
+    showToast('未打开缺陷列表页，请先在 DMP 打开缺陷列表');
     api.cancel();
     return;
   }
@@ -1115,6 +1121,10 @@ function cancelScreenshot() {
 
 // 多图添加成功回调：显示提示
 api.onMultiShotAccepted((data) => {
+  if (_suppressMultiShotToast) {
+    _suppressMultiShotToast = false;
+    return;
+  }
   showToast(`已加入多图 (${data.count}/${data.max})`);
 });
 
