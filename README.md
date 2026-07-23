@@ -1,80 +1,63 @@
-# BUG 录入与走查管理工具
+# BUG 工具 — 截图标注与 DMP 缺陷录入工具
 
-一套三端联动的内部 BUG 管理工具，专为 UI 走查场景设计。
+一款面向测试/开发人员的 macOS 效率工具，专注于**快捷键截图 → 标注 → 一键提交 DMP 缺陷**的完整闭环。
 
-> ⚠️ **macOS 用户必读：首次运行前请完成以下设置**
->
-> 从 Git clone 后首次打开 `.command` 文件或 Electron 应用时，macOS 会阻止运行。请按以下步骤解除：
->
-> **步骤一：解除文件权限限制**
-> ```bash
-> cd /path/to/BugTool
-> chmod +x 首次安装.command 启动BUG工具.command start.sh stop.sh
-> xattr -cr .
-> ```
->
-> **步骤二：允许打开未验证的应用**
-> 1. 双击文件，弹出「无法打开」提示后点击「好」
-> 2. 打开 **系统设置 → 隐私与安全性**
-> 3. 滚动到底部，点击 **仍要打开**
-> 4. （或者右键文件 → 打开 → 在弹窗中点击「打开」）
->
-> **步骤三：授予屏幕录制权限（截图功能需要）**
-> - 系统设置 → 隐私与安全性 → 屏幕录制 → 勾选启动截图工具的终端应用
+> 当前主线能力已从「本地 BUG 管理系统」演进为「截图标注 + 金蝶 DMP 缺陷提交工具」，保留后端与 WEB 管理端作为历史模块。
+
+---
+
+## 主要功能
+
+| 功能 | 说明 |
+|------|------|
+| 🚀 快捷键截图 | 自定义全局快捷键唤起截图，框选任意区域 |
+| ✏️ 实时标注 | 矩形、箭头、画笔、文字；支持字号/颜色选择与文字再编辑 |
+| 🐛 一键提 BUG | 已连接 DMP 并打开缺陷列表页时，截图后直接提交 |
+| 📦 浮窗收集 | 未满足提交条件时，截图暂存右下角浮窗，支持单选/多选批量提交 |
+| 🖼️ 组合编辑 | 多选截图进入组合编辑器，拼接/排列后生成一张组合图 |
+| ⌨️ 自定义快捷键 | 托盘菜单进入「快捷键设置」，自由设定全局截图快捷键 |
+| 🔔 统一 Toast | 提交进度、附件上传等状态在屏幕偏下方居中实时提示 |
+
+---
+
+## 核心流程
+
+1. 按快捷键唤起截图工具，框选需要截图的区域
+2. 在截图上添加标注（矩形、箭头、画笔、文字）
+3. 点击 **「提BUG」**
+   - 已连接 DMP 且在缺陷列表页：直接提交，截图窗口立即关闭
+   - 未连接或不在缺陷列表页：保存到右下角浮窗，并提示连接 DMP
+4. 文字标注会自动带入 DMP 缺陷标题和描述
+5. 浮窗中可继续选择单张或多张截图批量提交
+
+### 标题前缀规则
+
+- 标题前缀固定为：`【灵基】`
+- 若截图上有文字标注，第一个文字标注作为标题；多个文字标注拼接为描述
+- 若无文字标注，标题自动生成：`DMP缺陷 - 2026/7/22 17:02:25`
+
+---
 
 ## 系统架构
 
 | 端 | 技术栈 | 用途 |
 |----|--------|------|
-| 后端 API | Python · FastAPI · SQLite · SQLAlchemy | 数据存储与业务逻辑 |
-| WEB 管理端 | Vue 3 · Vite · Element Plus · Pinia | BUG 列表管理、详情查看、人员/模块维护 |
-| Electron 截图工具 | Electron · TypeScript | 截图 → 标注 → 提交 BUG；悬浮 BUG 查看器 |
+| Electron 截图工具 | Electron · TypeScript | 截图、标注、DMP 提交、浮窗、组合编辑器 |
+| 后端 API | Python · FastAPI · SQLite · SQLAlchemy | 历史本地 BUG 数据存储 |
+| WEB 管理端 | Vue 3 · Vite · Element Plus · Pinia | 历史 BUG 列表管理 |
 
-## 核心流程
-
-1. 测试人员按 `Ctrl+Shift+A` 唤起截图工具
-2. 框选区域 → 在截图上标注（矩形框/箭头/画笔/文字）
-3. 点击「录入」填写表单 → 提交，截图自动上传到后端
-4. 开发人员打开 BUG 查看器（托盘菜单）查看待处理 BUG，更新状态
-5. 管理人员在 WEB 端统一查看、筛选、管理所有 BUG
-
-### 界面预览
-
-**托盘菜单 — 快速入口**
-
-![托盘菜单](docs/screenshots/tray-menu.png)
-
-**截图标注 + BUG 录入弹窗**
-
-![BUG录入](docs/screenshots/bug-submit.png)
-
-**BUG 查看器 — 悬浮窗口**
-
-![BUG查看器](docs/screenshots/bug-viewer.png)
-
-**WEB 管理端 — BUG 列表**
-
-![WEB管理端](docs/screenshots/web-list.png)
+---
 
 ## 快速开始
 
 ### 环境要求
 
+- macOS（Apple Silicon / arm64）
 - Node.js >= 18
 - Python >= 3.9
-- macOS（截图功能依赖系统 `screencapture` 命令）
+- Google Chrome 或 Microsoft Edge（DMP 自动化需要，Safari 不支持）
 
 ### 安装依赖
-
-**方式一：双击安装（推荐）**
-
-从 Git clone 后，在终端运行一次：
-```bash
-chmod +x 首次安装.command 启动BUG工具.command
-```
-然后双击「首次安装.command」，会自动检测环境并安装所有依赖。
-
-**方式二：手动安装**
 
 ```bash
 # 后端
@@ -83,21 +66,11 @@ cd server && pip3 install -r requirements.txt
 # WEB 端
 cd web && npm install
 
-# Electron 截图工具（首次安装会下载较大的 ffmpeg 依赖，约 70MB，用于录屏转 mp4）
-cd electron-screenshot && npm install && npm run build
+# Electron 截图工具
+cd electron-screenshot && npm install
 ```
 
 ### 启动
-
-**一键启动（推荐）：**
-
-```bash
-# 双击项目根目录下的「启动BUG工具.command」
-# 或命令行执行：
-./启动BUG工具.command
-```
-
-**手动启动：**
 
 ```bash
 # 终端1：后端（端口 8000）
@@ -110,120 +83,105 @@ npm run dev
 
 # 终端3：Electron 截图工具
 cd electron-screenshot
-./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron .
+npm run dev
 ```
 
-### 示例数据
+---
 
-首次安装脚本会自动初始化示例数据（用户、项目、BUG）。如需手动初始化：
-```bash
-cd server && python3 seed_data.py
-```
-注意：如果数据库中已有数据，脚本会自动跳过，不会重复写入。
-
-## 打包为独立应用（推荐分发方式）
-
-将工具打包成独立的 macOS 应用后，**最终用户无需安装 Node.js、Python 或任何依赖**，双击即用。
-
-### 打包（开发者操作，需 Apple Silicon 机器）
+## 打包为独立应用
 
 ```bash
-# 一键打包（构建 Web + 打包后端 + 构建 Electron + 出 dmg）
 ./build-app.sh
 ```
 
-产物：`dist-app/BUG工具-<版本>-arm64.dmg`（当前仅支持 Apple 芯片 / arm64）。
+产物：`dist-app/BUG工具-<版本>-arm64.dmg`（Apple Silicon）。
 
-打包依赖：开发机需有 Node.js、Python3、PyInstaller（脚本会自动安装 PyInstaller）。
+最终用户无需安装 Node.js、Python 或任何依赖，双击即用。
 
-### 最终用户安装与首次打开
+### 首次打开
 
 1. 双击 `.dmg`，把「BUG工具」拖入「应用程序」文件夹
-2. 首次打开（未签名应用，需绕过 Gatekeeper）：
-   - **右键点击**「BUG工具」→ 选择「打开」→ 在弹窗中再点「打开」
-   - 若提示"已损坏或无法验证"，在终端执行：
-     ```bash
-     xattr -cr /Applications/BUG工具.app
-     ```
-3. 首次截图/录屏时授予**屏幕录制权限**：系统设置 → 隐私与安全性 → 屏幕录制 → 勾选 BUG工具
-4. 打开后无需做任何配置，应用会自动启动内置后端服务
+2. 右键点击「BUG工具」→ 选择「打开」→ 再点「打开」以绕过 Gatekeeper
+3. 授予**屏幕录制权限**：系统设置 → 隐私与安全性 → 屏幕录制 → 勾选 BUG工具
+4. 应用会自动启动内置后端服务
 
-### 数据存储位置
+---
 
-打包应用的数据库与上传文件存放在：
+## 快捷键
+
+| 操作 | 默认快捷键 |
+|------|-----------|
+| 唤起截图 | `Cmd/Ctrl + Shift + A`（可自定义） |
+| 撤销标注 | `Cmd/Ctrl + Z` |
+| 确认文字输入 | `Enter` |
+| 删除选中文字标注 | `Delete` / `Backspace` |
+| 退出当前层级 | `Esc` |
+
+---
+
+## 功能特性
+
+### 截图标注
+- 矩形框、箭头、画笔、文字工具
+- 文字工具支持子栏：字号（大/中/小）、颜色选择、编辑、删除
+- 文字标注可拖动、双击编辑、选中后删除
+- 撤销、清空标注
+
+### DMP 提交
+- 自动检测 DMP 连接状态和缺陷列表页
+- 已连接且在缺陷列表页时直接提交，不经过浮窗
+- 浮窗支持单选/多选批量提交
+- 提交进度实时 Toast 反馈
+- 上传截图到附件时提示「正在添加截图到附件」
+
+### 浮窗与组合编辑
+- 右下角浮窗收集截图
+- 支持多选后批量提交或生成组合图
+- 组合编辑器支持拖动排序、删除、导出
+- 组合编辑器窗口带系统关闭/最小化/最大化按钮
+
+---
+
+## 数据存储
+
+打包应用的数据库存放在：
+
 ```
 ~/Library/Application Support/bug-screenshot-tool/
 ├── bug_tool.db        # 数据库
 └── uploads/           # 截图/录屏文件
 ```
-更新或重装应用不会影响这些数据。
 
-
-
-```
-bugTool/
-├── server/                    # FastAPI 后端
-│   ├── main.py                # 应用入口
-│   ├── models.py              # ORM 模型
-│   ├── schemas.py             # Pydantic 请求/响应模型
-│   ├── database.py            # 数据库连接
-│   ├── routers/               # 路由层
-│   └── services/              # 业务逻辑层
-├── web/                       # Vue 3 WEB 管理端
-│   └── src/
-│       ├── views/             # 页面组件
-│       ├── stores/            # Pinia 状态管理
-│       ├── api/               # API 请求封装
-│       └── types/             # TypeScript 类型定义
-├── electron-screenshot/       # Electron 截图工具
-│   └── src/
-│       ├── main/              # 主进程（截图、IPC、窗口管理）
-│       ├── preload/           # 预加载脚本
-│       └── renderer/          # 渲染进程（截图标注、BUG查看器）
-├── 启动BUG工具.command         # macOS 双击启动器
-├── start.sh                   # 启动脚本
-└── stop.sh                    # 停止脚本
-```
-
-## 功能特性
-
-### WEB 管理端
-- BUG 列表：分页、多维度筛选（状态/类型/优先级/模块/人员）、列头排序
-- BUG 详情：状态流转、截图查看、操作历史
-- 走查项目管理：支持父子层级分类
-- 功能模块管理
-- 用户管理（测试员/开发者/管理员）
-
-### Electron 截图工具
-- 全局快捷键 `Ctrl+Shift+A` 截图
-- 截图标注：矩形框、箭头、画笔、文字、颜色/线宽选择
-- 截图操作：复制到剪贴板、保存到桌面、录入 BUG
-- BUG 查看器：悬浮窗口、三页签（待处理/待验收/已关闭）
-- 状态变更、转交、协作人管理
-
-### 后端 API
-- RESTful 接口设计
-- 统一响应格式 `{ code, message, data }`
-- 文件上传（截图存储）
-- 分页查询
-
-## API 端点
+快捷键配置存放在：
 
 ```
-GET    /api/v1/health                  # 健康检查
-GET    /api/v1/bugs                    # BUG 列表（分页/筛选）
-POST   /api/v1/bugs                    # 创建 BUG
-GET    /api/v1/bugs/{id}               # BUG 详情
-PUT    /api/v1/bugs/{id}/status        # 变更状态
-POST   /api/v1/uploads/screenshot      # 上传截图
-GET    /api/v1/inspection-tasks        # 走查项目列表
-GET    /api/v1/function-modules        # 功能模块列表
-GET    /api/v1/users                   # 用户列表
+~/Library/Application Support/BUG工具/shortcut-config.json
 ```
+
+---
 
 ## 注意事项
 
 - 端口固定：后端 `8000`，WEB `5173`
 - SQLite 单机部署，不适合多人高并发写入
+- DMP 自动化依赖 Chrome/Edge 的 CDP，请确保浏览器已登录 DMP 并打开缺陷列表页
 - 截图文件存放在 `server/uploads/`，不进版本库
-- Electron 不要用 `npm start` 启动，直接调用二进制避免退出残留进程
+
+---
+
+## 项目结构
+
+```
+bugTool/
+├── server/                    # FastAPI 后端
+├── web/                       # Vue 3 WEB 管理端
+├── electron-screenshot/       # Electron 截图工具
+│   └── src/
+│       ├── main/              # 主进程（截图、IPC、窗口管理、快捷键）
+│       ├── preload/           # 预加载脚本
+│       └── renderer/          # 渲染进程（截图标注、浮窗、组合编辑器）
+├── 启动BUG工具.command         # macOS 双击启动器
+├── start.sh
+├── stop.sh
+└── build-app.sh               # 一键打包脚本
+```
