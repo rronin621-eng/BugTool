@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, Tray, Menu, nativeImage, screen, Notification } from 'electron';
+import { app, BrowserWindow, globalShortcut, Tray, Menu, nativeImage, screen, Notification, ipcMain } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import * as http from 'http';
@@ -6,6 +6,8 @@ import { takeScreenshots, DisplayScreenshot } from './screenshot';
 import { setupIpcHandlers } from './ipc-handlers';
 import { toggleBugViewer, setViewerAlwaysOnTop } from './bug-viewer-window';
 import { registerScreenshotWindow, destroyAllScreenshotWindows, getScreenshotWindowCount } from './screenshot-registry';
+import { loadShortcutConfig, saveShortcutConfig, getDefaultShortcutConfig, displayAccelerator } from './shortcut-config';
+import { openSettingsWindow } from './settings-window';
 
 // Single instance lock - MUST be called before app.whenReady
 const gotLock = app.requestSingleInstanceLock();
@@ -91,6 +93,23 @@ process.on('unhandledRejection', (reason: any) => {
   console.error('[Main] Unhandled rejection:', reason);
 });
 
+function buildTrayMenu() {
+  const accel = getRegisteredAccelerator();
+  return Menu.buildFromTemplate([
+    { label: `截图 (${displayAccelerator(accel)})`, click: () => startScreenshot() },
+    { label: '打开 BUG 查看器', click: () => toggleBugViewer() },
+    { type: 'separator' },
+    { label: '快捷键设置...', click: () => openSettingsWindow() },
+    { type: 'separator' },
+    { label: '打开管理页面', click: () => {
+      const { shell } = require('electron');
+      shell.openExternal(app.isPackaged ? 'http://127.0.0.1:8000' : 'http://localhost:5173');
+    }},
+    { type: 'separator' },
+    { label: '退出', click: () => app.quit() },
+  ]);
+}
+
 function createTray() {
   // Load tray icon from assets
   const iconPath = path.join(__dirname, '../assets/tray-icon.png');
@@ -110,23 +129,17 @@ function createTray() {
   }
 
   tray = new Tray(icon);
-  const contextMenu = Menu.buildFromTemplate([
-    { label: '截图 (Ctrl+Shift+A)', click: () => startScreenshot() },
-    { label: '打开 BUG 查看器', click: () => toggleBugViewer() },
-    { type: 'separator' },
-    { label: '打开管理页面', click: () => {
-      const { shell } = require('electron');
-      shell.openExternal(app.isPackaged ? 'http://127.0.0.1:8000' : 'http://localhost:5173');
-    }},
-    { type: 'separator' },
-    { label: '退出', click: () => app.quit() },
-  ]);
-
   tray.setToolTip('BUG截图工具');
-  tray.setContextMenu(contextMenu);
+  tray.setContextMenu(buildTrayMenu());
   // macOS: single click shows context menu (no screenshot on click to avoid accidental trigger)
   if (process.platform === 'darwin') {
     tray.on('click', () => tray!.popUpContextMenu());
+  }
+}
+
+function updateTrayMenu() {
+  if (tray && !tray.isDestroyed()) {
+    tray.setContextMenu(buildTrayMenu());
   }
 }
 
@@ -330,16 +343,27 @@ async function startScreenshot() {
   }
 }
 
-function registerShortcut() {
-  const ret = globalShortcut.register('CommandOrControl+Shift+A', () => {
-    console.log('[Shortcut] Ctrl+Shift+A triggered');
+let registeredAccelerator = '';
+
+function registerShortcut(accelerator: string) {
+  globalShortcut.unregisterAll();
+  registeredAccelerator = '';
+
+  const ret = globalShortcut.register(accelerator, () => {
+    console.log(`[Shortcut] ${accelerator} triggered`);
     startScreenshot();
   });
   if (!ret) {
-    console.error('[Shortcut] Global shortcut registration failed - may be in use by another app');
+    console.error(`[Shortcut] Global shortcut ${accelerator} registration failed - may be in use by another app`);
+    new Notification({ title: 'BUG工具', body: `快捷键 ${displayAccelerator(accelerator)} 注册失败，可能已被其他应用占用。` }).show();
   } else {
-    console.log('[Shortcut] Ctrl+Shift+A registered successfully');
+    registeredAccelerator = accelerator;
+    console.log(`[Shortcut] ${accelerator} registered successfully`);
   }
+}
+
+function getRegisteredAccelerator(): string {
+  return registeredAccelerator || getDefaultShortcutConfig().accelerator;
 }
 
 app.whenReady().then(async () => {
@@ -354,7 +378,27 @@ app.whenReady().then(async () => {
   }
 
   createTray();
-  registerShortcut();
+  const shortcutConfig = loadShortcutConfig();
+  registerShortcut(shortcutConfig.accelerator);
+
+  // 快捷键设置 IPC
+  ipcMain.handle('settings:get-shortcut', () => {
+    return getRegisteredAccelerator();
+  });
+  ipcMain.handle('settings:get-default-shortcut', () => {
+    return getDefaultShortcutConfig().accelerator;
+  });
+  ipcMain.handle('settings:save-shortcut', (_event, accelerator: string) => {
+    try {
+      saveShortcutConfig({ accelerator });
+      registerShortcut(accelerator);
+      updateTrayMenu();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.message || '保存失败' };
+    }
+  });
+
   console.log('[Main] 开始注册 IPC handlers...');
   try {
     setupIpcHandlers(API_BASE);
@@ -389,7 +433,7 @@ app.whenReady().then(async () => {
     }
   }
 
-  console.log('[App] BUG截图工具已启动，按 Ctrl+Shift+A 截图');
+  console.log(`[App] BUG截图工具已启动，按 ${displayAccelerator(getRegisteredAccelerator())} 截图`);
 
   // 注册屏幕采集处理器：录屏时 getDisplayMedia 自动选择主屏
   const { session, desktopCapturer } = require('electron');

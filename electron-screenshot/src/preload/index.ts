@@ -147,3 +147,10 @@ contextBridge.exposeInMainWorld('combineAPI', {
   setWindowLevel: (level: string) => ipcRenderer.send('combine:set-level', level),
 });
 
+// 快捷键设置 API
+contextBridge.exposeInMainWorld('settingsAPI', {
+  getShortcut: () => ipcRenderer.invoke('settings:get-shortcut'),
+  getDefaultShortcut: () => ipcRenderer.invoke('settings:get-default-shortcut'),
+  saveShortcut: (accelerator: string) => ipcRenderer.invoke('settings:save-shortcut', accelerator),
+});
+
