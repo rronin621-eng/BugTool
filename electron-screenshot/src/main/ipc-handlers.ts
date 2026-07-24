@@ -192,15 +192,22 @@ export function setupIpcHandlers(apiBaseUrl: string) {
       title = `DMP缺陷 - ${now.toLocaleString('zh-CN', { hour12: false })}`;
     }
 
-    // 1) 检查 DMP 连接
-    const testResult = await testDmpConnection();
+    // 1) 检查 DMP 连接，未连接时自动唤起 DMP 浏览器
+    let testResult = await testDmpConnection();
+    if (!testResult.success || !testResult.isInDefectList) {
+      showToastWindow('正在唤起 DMP 浏览器...', 6000);
+      await launchDmpBrowser();
+      // 等待几秒后重新检测
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      testResult = await testDmpConnection();
+    }
     if (!testResult.success) {
-      showToastWindow('未连接 DMP，请先登录并打开缺陷列表', 4000);
-      return { success: false, message: '未连接 DMP，请先登录并打开缺陷列表' };
+      showToastWindow('请登录 DMP 并打开缺陷列表后再提BUG', 6000);
+      return { success: false, message: '请登录 DMP 并打开缺陷列表后再提BUG' };
     }
     if (!testResult.isInDefectList) {
-      showToastWindow('请先打开缺陷列表页', 4000);
-      return { success: false, message: '请先打开缺陷列表页' };
+      showToastWindow('请登录 DMP 并打开缺陷列表后再提BUG', 6000);
+      return { success: false, message: '请登录 DMP 并打开缺陷列表后再提BUG' };
     }
 
     // 2) 提交到 DMP
