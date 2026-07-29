@@ -177,15 +177,21 @@ function setupPermissionIpc() {
     return getAllPermissions();
   });
 
-  ipcMain.handle('permission:open-preferences', (_event, type: string) => {
+  ipcMain.handle('permission:open-preferences', async (_event, type: string) => {
     if (type === 'screen' || type === 'accessibility') {
+      // 打开设置前先触发一次系统注册，确保应用出现在系统设置的权限列表中
+      if (type === 'screen') {
+        await requestScreenRecording();
+      } else {
+        requestAccessibility();
+      }
       openSystemPreferences(type);
     }
   });
 
-  ipcMain.handle('permission:request', (_event, type: string) => {
+  ipcMain.handle('permission:request', async (_event, type: string) => {
     if (type === 'screen') {
-      const granted = requestScreenRecording();
+      const granted = await requestScreenRecording();
       broadcastPermissionStatus();
       return granted;
     }
@@ -195,6 +201,12 @@ function setupPermissionIpc() {
       return granted;
     }
     return false;
+  });
+
+  // 授予屏幕录制权限后 macOS 要求重启应用才能生效
+  ipcMain.on('permission:relaunch', () => {
+    app.relaunch();
+    app.exit(0);
   });
 }
 

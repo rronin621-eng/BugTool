@@ -1,6 +1,7 @@
 const permissionList = document.getElementById('permissionList');
 const btnContinue = document.getElementById('btnContinue');
 const btnRetry = document.getElementById('btnRetry');
+const btnRelaunch = document.getElementById('btnRelaunch');
 
 const ICONS = {
   screen: '📷',
@@ -52,8 +53,16 @@ function renderPermissions(permissions) {
 
     const openBtn = item.querySelector('button[data-pane]');
     if (openBtn && p.status !== 'granted') {
-      openBtn.addEventListener('click', () => {
-        window.permissionAPI.openSystemPreferences(p.preferencePane);
+      openBtn.addEventListener('click', async () => {
+        openBtn.disabled = true;
+        try {
+          // 先触发系统注册/授权提示，确保应用出现在系统设置的权限列表中
+          await window.permissionAPI.requestPermission(p.id);
+        } catch (err) {
+          console.error('[Permission] 请求权限失败:', err);
+        }
+        await window.permissionAPI.openSystemPreferences(p.preferencePane);
+        openBtn.disabled = false;
       });
     }
 
@@ -84,6 +93,12 @@ if (btnContinue) {
 if (btnRetry) {
   btnRetry.addEventListener('click', () => {
     refreshPermissions();
+  });
+}
+
+if (btnRelaunch) {
+  btnRelaunch.addEventListener('click', () => {
+    window.permissionAPI.relaunch();
   });
 }
 

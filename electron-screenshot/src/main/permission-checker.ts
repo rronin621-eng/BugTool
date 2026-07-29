@@ -1,4 +1,4 @@
-import { systemPreferences, shell } from 'electron';
+import { systemPreferences, shell, desktopCapturer } from 'electron';
 
 export type PermissionStatus = 'granted' | 'not-determined' | 'denied' | 'restricted' | 'unknown';
 
@@ -37,10 +37,16 @@ export function checkAccessibility(): PermissionStatus {
   }
 }
 
-export function requestScreenRecording(): boolean {
+export async function requestScreenRecording(): Promise<boolean> {
   if (!isMacOS()) return true;
-  // macOS 屏幕录制权限没有编程请求 API，只能引导用户前往系统设置授予
-  // 这里返回当前状态，真正的授权动作由 openSystemPreferences('screen') 完成
+  // macOS 屏幕录制权限没有编程请求 API，只能引导用户前往系统设置授予。
+  // 但只有应用真正尝试捕获过一次屏幕，才会出现在系统设置的「屏幕录制」
+  // 列表中供用户勾选，因此这里主动触发一次捕获以完成注册
+  try {
+    await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
+  } catch (err) {
+    console.error('[Permission] 触发屏幕录制注册失败:', err);
+  }
   return checkScreenRecording() === 'granted';
 }
 

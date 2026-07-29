@@ -160,6 +160,7 @@ contextBridge.exposeInMainWorld('permissionAPI', {
   openSystemPreferences: (type: string) => ipcRenderer.invoke('permission:open-preferences', type),
   requestPermission: (type: string) => ipcRenderer.invoke('permission:request', type),
   continue: () => ipcRenderer.send('permission:continue'),
+  relaunch: () => ipcRenderer.send('permission:relaunch'),
   onPermissionUpdate: (callback: (status: any) => void) => {
     ipcRenderer.on('permission:update', (_e, status) => callback(status));
   },
