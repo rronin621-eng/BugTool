@@ -24,3 +24,4 @@ server/*.spec
 .kiro/
 .qoder/
 .vscode/
+electron-screenshot/tessdata/

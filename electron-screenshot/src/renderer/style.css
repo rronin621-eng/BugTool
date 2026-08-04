@@ -859,3 +859,37 @@ body {
   color: #64748b;
   padding: 0 6px;
 }
+
+/* ============ OCR 透明文字层 ============ */
+.ocr-text-layer {
+  position: absolute;
+  z-index: 20;
+  overflow: hidden;
+  pointer-events: none;
+  cursor: text;
+}
+
+.ocr-text-layer.active {
+  pointer-events: auto;
+}
+
+.ocr-text-layer.hidden {
+  display: none !important;
+}
+
+.ocr-word {
+  position: absolute;
+  color: transparent;
+  background: transparent;
+  user-select: text;
+  -webkit-user-select: text;
+  white-space: pre;
+  cursor: text;
+  line-height: 1.2;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
+}
+
+/* 选中文字时的高亮背景（半透明蓝色） */
+.ocr-text-layer ::selection {
+  background: rgba(59, 130, 246, 0.4);
+}

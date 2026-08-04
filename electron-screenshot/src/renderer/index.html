@@ -10,6 +10,8 @@
   <div id="overlay" class="overlay hidden">
     <canvas id="bgCanvas"></canvas>
     <canvas id="drawCanvas"></canvas>
+    <!-- OCR 透明文字层：识别后在选区上方渲染可选中文字 -->
+    <div id="ocrTextLayer" class="ocr-text-layer hidden"></div>
   </div>
 
   <!-- 选区信息 -->
@@ -32,6 +34,7 @@
     <button id="btnArrow" class="tool-btn" title="箭头">→</button>
     <button id="btnPen" class="tool-btn" title="画笔">✎</button>
     <button id="btnText" class="tool-btn" title="文字">T</button>
+    <button id="btnOCR" class="tool-btn" title="识别文字（可选中复制）">字</button>
     <span class="toolbar-divider"></span>
     <button id="btnUndo" class="tool-btn" title="撤销 (Ctrl+Z)">↩</button>
     <button id="btnClear" class="tool-btn" title="清除标注">🗑</button>

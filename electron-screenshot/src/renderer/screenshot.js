@@ -33,6 +33,7 @@ const state = {
   resizingHandle: null,   // 当前拖动的手柄 id
   resizeOrigin: null,     // resize 开始时的选区快照 { x,y,w,h }
   resizeStart: null,      // resize 开始时的鼠标坐标 { x,y }
+  ocrMode: false,         // OCR 文字识别模式
 };
 
 // ============ DOM Elements ============
@@ -46,6 +47,7 @@ const selectionSize = document.getElementById('selectionSize');
 const toolbar = document.getElementById('toolbar');
 const bugFormOverlay = document.getElementById('bugFormOverlay');
 const textInput = document.getElementById('textInput');
+const ocrTextLayer = document.getElementById('ocrTextLayer');
 
 // 文字子栏元素
 const textSubToolbar = document.getElementById('textSubToolbar');
@@ -817,6 +819,7 @@ document.getElementById('btnRect').addEventListener('click', () => setTool('rect
 document.getElementById('btnArrow').addEventListener('click', () => setTool('arrow'));
 document.getElementById('btnPen').addEventListener('click', () => setTool('pen'));
 document.getElementById('btnText').addEventListener('click', () => setTool('text'));
+document.getElementById('btnOCR').addEventListener('click', () => setTool('ocr'));
 document.getElementById('colorPicker').addEventListener('input', (e) => {
   state.drawColor = e.target.value;
 });
@@ -1004,7 +1007,7 @@ document.getElementById('btnCancel').addEventListener('click', cancelScreenshot)
 function setTool(tool) {
   state.currentTool = tool;
   document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-  const btnMap = { rect: 'btnRect', arrow: 'btnArrow', pen: 'btnPen', text: 'btnText' };
+  const btnMap = { rect: 'btnRect', arrow: 'btnArrow', pen: 'btnPen', text: 'btnText', ocr: 'btnOCR' };
   document.getElementById(btnMap[tool])?.classList.add('active');
 
   // 文字工具激活时显示子栏并定位到 T 按钮下方，否则隐藏并取消选中
@@ -1022,6 +1025,83 @@ function setTool(tool) {
     state.selectedTextIdx = -1;
     updateTextEditButtons();
     redrawAnnotations();
+  }
+
+  // OCR 模式：显示文字层供选中；其他工具：隐藏文字层
+  if (tool === 'ocr') {
+    state.ocrMode = true;
+    if (ocrTextLayer.children.length > 0) {
+      // 已有识别结果，直接显示
+      ocrTextLayer.classList.remove('hidden');
+      ocrTextLayer.classList.add('active');
+    } else {
+      // 首次进入 OCR 模式：触发识别
+      runOcr();
+    }
+  } else {
+    state.ocrMode = false;
+    ocrTextLayer.classList.remove('active');
+    ocrTextLayer.classList.add('hidden');
+  }
+}
+
+// ============ OCR 文字识别 ============
+async function runOcr() {
+  if (!state.screenshotImage || state.selection.w <= 0) return;
+
+  showToast('正在识别文字...', 60000);
+
+  try {
+    // 从选区裁取原始截图（不含标注）传给 OCR
+    const { x, y, w, h } = state.selection;
+    const sx = x * imgScaleX(), sy = y * imgScaleY();
+    const sw = w * imgScaleX(), sh = h * imgScaleY();
+
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = Math.round(sw);
+    tmpCanvas.height = Math.round(sh);
+    const tmpCtx = tmpCanvas.getContext('2d');
+    tmpCtx.drawImage(state.screenshotImage, sx, sy, sw, sh, 0, 0, sw, sh);
+    const dataUrl = tmpCanvas.toDataURL('image/png');
+
+    const result = await api.ocrRecognize(dataUrl);
+    if (!result.success || !result.words || result.words.length === 0) {
+      showToast('未识别到文字');
+      return;
+    }
+
+    // 定位文字层到选区区域
+    ocrTextLayer.style.left = x + 'px';
+    ocrTextLayer.style.top = y + 'px';
+    ocrTextLayer.style.width = w + 'px';
+    ocrTextLayer.style.height = h + 'px';
+    ocrTextLayer.innerHTML = '';
+
+    const scaleX = imgScaleX();
+    const scaleY = imgScaleY();
+
+    // 逐词渲染透明文字，按 bbox 坐标定位（相对于选区左上角）
+    for (const word of result.words) {
+      const div = document.createElement('div');
+      div.className = 'ocr-word';
+      div.textContent = word.text;
+      const cssX = word.bbox.x0 / scaleX;
+      const cssY = word.bbox.y0 / scaleY;
+      const cssW = (word.bbox.x1 - word.bbox.x0) / scaleX;
+      const cssH = (word.bbox.y1 - word.bbox.y0) / scaleY;
+      div.style.left = cssX + 'px';
+      div.style.top = cssY + 'px';
+      div.style.width = cssW + 'px';
+      div.style.fontSize = Math.max(10, cssH * 0.8) + 'px';
+      ocrTextLayer.appendChild(div);
+    }
+
+    ocrTextLayer.classList.remove('hidden');
+    ocrTextLayer.classList.add('active');
+    showToast('识别完成，可直接选中文字复制');
+  } catch (err) {
+    console.error('[OCR] 识别失败:', err);
+    showToast('文字识别失败');
   }
 }
 

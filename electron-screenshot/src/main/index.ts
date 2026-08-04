@@ -4,6 +4,7 @@ import { spawn, ChildProcess } from 'child_process';
 import * as http from 'http';
 import { takeScreenshots, DisplayScreenshot } from './screenshot';
 import { setupIpcHandlers } from './ipc-handlers';
+import { setupOcrHandler } from './ocr-handler';
 import { toggleBugViewer, setViewerAlwaysOnTop } from './bug-viewer-window';
 import { registerScreenshotWindow, destroyAllScreenshotWindows, getScreenshotWindowCount } from './screenshot-registry';
 import { loadShortcutConfig, saveShortcutConfig, getDefaultShortcutConfig, displayAccelerator } from './shortcut-config';
@@ -459,6 +460,7 @@ function finishAppInitialization() {
   console.log('[Main] 开始注册 IPC handlers...');
   try {
     setupIpcHandlers(API_BASE);
+    setupOcrHandler();
     console.log('[Main] IPC handlers 注册完成');
   } catch (err: any) {
     console.error('[Main] IPC handlers 注册失败:', err);

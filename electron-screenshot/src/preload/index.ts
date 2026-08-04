@@ -73,6 +73,10 @@ contextBridge.exposeInMainWorld('screenshotAPI', {
   getFunctionModules: () => {
     return ipcRenderer.invoke('modules:list');
   },
+  // OCR 文字识别：传入图片 dataURL，返回识别到的文字及位置坐标
+  ocrRecognize: (dataUrl: string) => {
+    return ipcRenderer.invoke('ocr:recognize', dataUrl);
+  },
 });
 
 contextBridge.exposeInMainWorld('bugViewerAPI', {
