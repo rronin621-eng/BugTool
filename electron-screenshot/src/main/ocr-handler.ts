@@ -1,5 +1,6 @@
 import { ipcMain, app } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 
 // Tesseract.js worker 复用，避免每次识别都重新加载 WASM 和训练数据
 let worker: any = null;
@@ -17,20 +18,48 @@ async function getWorker(): Promise<any> {
     // 动态 require 避免 TypeScript 类型定义缺失问题
     const { createWorker } = require('tesseract.js');
 
+    // 训练数据路径：打包后从 resources/tessdata 加载，开发时从项目 tessdata 加载
     const langPath = app.isPackaged
       ? path.join(process.resourcesPath, 'tessdata')
-      : path.join(__dirname, '..', '..', 'tessdata');
+      : path.join(__dirname, '..', '..', '..', 'tessdata');
 
-    console.log('[OCR] 初始化 worker，训练数据路径:', langPath);
+    // Tesseract.js 默认 workerPath 指向 asar 内文件，但 Worker 线程无法加载 asar
+    // 必须显式指向 app.asar.unpacked 或 node_modules 的真实文件系统路径
+    let workerPath: string | undefined;
+    let corePath: string | undefined;
 
-    worker = await createWorker(['chi_sim', 'eng'], 1, {
-      langPath,
-      logger: (m: any) => {
-        if (m.status === 'recognizing text') {
-          console.log(`[OCR] 识别进度: ${Math.round(m.progress * 100)}%`);
-        }
-      },
-    });
+    if (app.isPackaged) {
+      // 打包后：指向 app.asar.unpacked 中的 tesseract.js 文件
+      const basePath = app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked');
+      workerPath = path.join(basePath, 'node_modules', 'tesseract.js', 'src', 'worker-script', 'node', 'index.js');
+      corePath = path.join(basePath, 'node_modules', 'tesseract.js-core');
+
+      // 验证文件存在
+      if (!fs.existsSync(workerPath)) {
+        console.error('[OCR] worker 脚本不存在:', workerPath);
+        workerPath = undefined;
+      }
+      if (!fs.existsSync(corePath)) {
+        console.error('[OCR] core 目录不存在:', corePath);
+        corePath = undefined;
+      }
+    }
+
+    console.log('[OCR] 初始化 worker');
+    console.log('[OCR] langPath:', langPath);
+    console.log('[OCR] workerPath:', workerPath || '(默认)');
+    console.log('[OCR] corePath:', corePath || '(默认)');
+
+    const options: any = { langPath };
+    if (workerPath) options.workerPath = workerPath;
+    if (corePath) options.corePath = corePath;
+    options.logger = (m: any) => {
+      if (m.status === 'recognizing text') {
+        console.log(`[OCR] 识别进度: ${Math.round(m.progress * 100)}%`);
+      }
+    };
+
+    worker = await createWorker(['chi_sim', 'eng'], 1, options);
 
     return worker;
   })();
