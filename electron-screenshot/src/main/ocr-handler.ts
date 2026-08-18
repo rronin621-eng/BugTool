@@ -1,6 +1,5 @@
 import { ipcMain, app } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs';
 
 // Tesseract.js worker 复用，避免每次识别都重新加载 WASM 和训练数据
 let worker: any = null;
@@ -23,43 +22,31 @@ async function getWorker(): Promise<any> {
       ? path.join(process.resourcesPath, 'tessdata')
       : path.join(__dirname, '..', '..', '..', 'tessdata');
 
-    // Tesseract.js 默认 workerPath 指向 asar 内文件，但 Worker 线程无法加载 asar
-    // 必须显式指向 app.asar.unpacked 或 node_modules 的真实文件系统路径
+    // Worker 线程无法加载 asar 内的文件，必须使用 esbuild 打包的自包含 worker
+    // 该文件包含所有依赖和内嵌的 WASM（simd-lstm 变体），位于 resources/ 目录
     let workerPath: string | undefined;
-    let corePath: string | undefined;
-
     if (app.isPackaged) {
-      // 打包后：指向 app.asar.unpacked 中的 tesseract.js 文件
-      const basePath = app.getAppPath().replace(/app\.asar$/, 'app.asar.unpacked');
-      workerPath = path.join(basePath, 'node_modules', 'tesseract.js', 'src', 'worker-script', 'node', 'index.js');
-      corePath = path.join(basePath, 'node_modules', 'tesseract.js-core');
-
-      // 验证文件存在
-      if (!fs.existsSync(workerPath)) {
-        console.error('[OCR] worker 脚本不存在:', workerPath);
-        workerPath = undefined;
-      }
-      if (!fs.existsSync(corePath)) {
-        console.error('[OCR] core 目录不存在:', corePath);
-        corePath = undefined;
-      }
+      workerPath = path.join(process.resourcesPath, 'tesseract-worker-bundled.js');
+    } else {
+      // 开发模式：dist/tesseract-worker-bundled.js（由 bundle-worker 脚本生成）
+      workerPath = path.join(__dirname, '..', 'tesseract-worker-bundled.js');
     }
 
     console.log('[OCR] 初始化 worker');
     console.log('[OCR] langPath:', langPath);
-    console.log('[OCR] workerPath:', workerPath || '(默认)');
-    console.log('[OCR] corePath:', corePath || '(默认)');
+    console.log('[OCR] workerPath:', workerPath);
 
-    const options: any = { langPath };
-    if (workerPath) options.workerPath = workerPath;
-    if (corePath) options.corePath = corePath;
+    const options: any = { langPath, workerPath, gzip: false };
     options.logger = (m: any) => {
       if (m.status === 'recognizing text') {
         console.log(`[OCR] 识别进度: ${Math.round(m.progress * 100)}%`);
       }
     };
 
-    worker = await createWorker(['chi_sim', 'eng'], 1, options);
+    worker = await createWorker(['chi_sim', 'eng'], 1, options).catch((err: any) => {
+      console.error('[OCR] createWorker 失败:', err.stack || err);
+      throw err;
+    });
 
     return worker;
   })();

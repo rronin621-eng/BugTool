@@ -880,16 +880,42 @@ body {
 .ocr-word {
   position: absolute;
   color: transparent;
-  background: transparent;
+  background: rgba(59, 130, 246, 0.06);
   user-select: text;
   -webkit-user-select: text;
   white-space: pre;
   cursor: text;
   line-height: 1.2;
+  border-radius: 2px;
+  transition: background 0.15s ease;
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', sans-serif;
+}
+
+/* 鼠标悬停时高亮，让用户看清文字范围 */
+.ocr-word:hover {
+  background: rgba(59, 130, 246, 0.25);
 }
 
 /* 选中文字时的高亮背景（半透明蓝色） */
 .ocr-text-layer ::selection {
   background: rgba(59, 130, 246, 0.4);
+}
+
+/* 复制全部按钮 */
+.ocr-copy-all {
+  position: absolute;
+  top: -32px;
+  right: 0;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(59, 130, 246, 0.9);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  z-index: 21;
+}
+.ocr-copy-all:hover {
+  background: rgba(59, 130, 246, 1);
 }

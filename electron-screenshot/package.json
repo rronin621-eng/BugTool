@@ -6,8 +6,8 @@
   "scripts": {
     "copy-renderer": "mkdir -p dist/renderer/viewer dist/renderer/shared dist/renderer/stack dist/renderer/combine dist/renderer/record dist/scripts dist/assets && cp src/renderer/index.html src/renderer/screenshot.js src/renderer/style.css src/renderer/img-preview.html src/renderer/settings.html src/renderer/settings.js src/renderer/permission.html src/renderer/permission.js dist/renderer/ && cp src/renderer/viewer/index.html src/renderer/viewer/viewer.js src/renderer/viewer/viewer.css dist/renderer/viewer/ && cp src/renderer/shared/*.js dist/renderer/shared/ && (cp src/renderer/stack/* dist/renderer/stack/ 2>/dev/null || true) && (cp src/renderer/combine/* dist/renderer/combine/ 2>/dev/null || true) && (cp src/renderer/record/* dist/renderer/record/ 2>/dev/null || true) && cp src/scripts/*.mjs dist/scripts/ && cp src/assets/tray-icon.png src/assets/tray-icon@2x.png dist/assets/",
     "dev": "tsc && npm run copy-renderer && electron .",
-    "build": "tsc && npm run copy-renderer",
-    "start": "electron .",
+    "bundle-worker": "esbuild src/_worker-entry.js --bundle --platform=node --format=cjs --target=node18 --outfile=dist/tesseract-worker-bundled.js --external:worker_threads --external:fs --external:path --external:child_process --external:os --external:crypto --external:stream --external:http --external:https --external:zlib --external:url --external:util --external:events --external:buffer --external:net --external:tls --external:assert --external:vm --external:v8 --external:perf_hooks",
+    "build": "tsc && npm run copy-renderer && npm run bundle-worker",
     "dist": "npm run build && electron-builder --mac --arm64",
     "download-tessdata": "mkdir -p tessdata && curl -L -o tessdata/chi_sim.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata && curl -L -o tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata"
   },
@@ -17,10 +17,11 @@
     "tesseract.js": "^5.1.0"
   },
   "devDependencies": {
+    "@types/node": "^20.10.0",
     "electron": "^28.0.0",
     "electron-builder": "^24.13.3",
-    "typescript": "^5.3.0",
-    "@types/node": "^20.10.0"
+    "esbuild": "^0.20.2",
+    "typescript": "^5.3.0"
   },
   "build": {
     "appId": "com.bugtool.app",
@@ -50,13 +51,35 @@
       {
         "from": "tessdata",
         "to": "tessdata"
+      },
+      {
+        "from": "dist/tesseract-worker-bundled.js",
+        "to": "tesseract-worker-bundled.js"
+      },
+      {
+        "from": "node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm",
+        "to": "tesseract-core-simd-lstm.wasm"
+      },
+      {
+        "from": "node_modules/tesseract.js-core/tesseract-core-simd.wasm",
+        "to": "tesseract-core-simd.wasm"
+      },
+      {
+        "from": "node_modules/tesseract.js-core/tesseract-core-lstm.wasm",
+        "to": "tesseract-core-lstm.wasm"
+      },
+      {
+        "from": "node_modules/tesseract.js-core/tesseract-core.wasm",
+        "to": "tesseract-core.wasm"
       }
     ],
     "mac": {
       "target": [
         {
           "target": "dmg",
-          "arch": ["arm64"]
+          "arch": [
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.developer-tools",

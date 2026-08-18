@@ -34,6 +34,7 @@ const state = {
   resizeOrigin: null,     // resize 开始时的选区快照 { x,y,w,h }
   resizeStart: null,      // resize 开始时的鼠标坐标 { x,y }
   ocrMode: false,         // OCR 文字识别模式
+  ocrRunning: false,      // OCR 正在运行中（防止重复调用）
 };
 
 // ============ DOM Elements ============
@@ -358,20 +359,39 @@ function finalizeSelection(mx, my) {
   loadUsers();
   loadInspectionTasks();
   loadFunctionModules();
+
+  // 选区完成后自动后台启动 OCR，用户点「字」时可直接查看结果
+  runOcr(true);
 }
+
+// macOS Dock 栏安全边距（px），避免工具栏被 Dock 遮挡
+const DOCK_SAFE_MARGIN = 72;
 
 function positionToolbar() {
   const { x, y, w, h } = state.selection;
   const toolbarW = toolbar.offsetWidth;
   const toolbarH = 40; // approximate toolbar height
 
+  // Safe bottom boundary: account for macOS Dock
+  const safeBottom = window.innerHeight - DOCK_SAFE_MARGIN;
+
   // Default: place toolbar centered below the selection
   let toolbarX = x + (w - toolbarW) / 2;
   let toolbarY = y + h + 8;
 
-  // If toolbar goes below screen, place it above selection
-  if (toolbarY + toolbarH > window.innerHeight) {
+  // If toolbar goes below safe boundary (near Dock), try placing above selection
+  if (toolbarY + toolbarH > safeBottom) {
     toolbarY = y - toolbarH - 8;
+  }
+
+  // If still below safe boundary (selection very tall), overlay toolbar inside selection near bottom
+  if (toolbarY + toolbarH > safeBottom) {
+    toolbarY = Math.max(y, safeBottom - toolbarH);
+  }
+
+  // If above-screen (selection near top), overlay inside selection near top
+  if (toolbarY < 8) {
+    toolbarY = Math.min(y + 8, safeBottom - toolbarH);
   }
 
   // Clamp horizontal position to keep toolbar fully on screen
@@ -1030,7 +1050,10 @@ function setTool(tool) {
   // OCR 模式：显示文字层供选中；其他工具：隐藏文字层
   if (tool === 'ocr') {
     state.ocrMode = true;
-    if (ocrTextLayer.children.length > 0) {
+    if (state.ocrRunning) {
+      // OCR 正在后台识别中，等待结果
+      showToast('正在识别文字...', 60000);
+    } else if (ocrTextLayer.children.length > 0) {
       // 已有识别结果，直接显示
       ocrTextLayer.classList.remove('hidden');
       ocrTextLayer.classList.add('active');
@@ -1046,10 +1069,17 @@ function setTool(tool) {
 }
 
 // ============ OCR 文字识别 ============
-async function runOcr() {
+async function runOcr(auto = false) {
   if (!state.screenshotImage || state.selection.w <= 0) return;
+  if (state.ocrRunning) return;
+  state.ocrRunning = true;
 
-  showToast('正在识别文字...', 60000);
+  if (auto) {
+    // 自动模式：静默显示识别中提示
+    showToast('正在识别文字...', 60000);
+  } else {
+    showToast('正在识别文字...', 60000);
+  }
 
   try {
     // 从选区裁取原始截图（不含标注）传给 OCR
@@ -1093,15 +1123,41 @@ async function runOcr() {
       div.style.top = cssY + 'px';
       div.style.width = cssW + 'px';
       div.style.fontSize = Math.max(10, cssH * 0.8) + 'px';
+      // 点击单个词复制到剪贴板
+      div.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        navigator.clipboard.writeText(word.text);
+        showToast('已复制：' + word.text);
+      });
       ocrTextLayer.appendChild(div);
     }
 
-    ocrTextLayer.classList.remove('hidden');
-    ocrTextLayer.classList.add('active');
-    showToast('识别完成，可直接选中文字复制');
+    // 添加“复制全部”按钮
+    const allText = result.words.map(w => w.text).join(' ');
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'ocr-copy-all';
+    copyBtn.textContent = '复制全部文字';
+    copyBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      navigator.clipboard.writeText(allText);
+      showToast('已复制全部文字');
+    });
+    ocrTextLayer.appendChild(copyBtn);
+
+    if (!auto) {
+      // 手动触发时直接显示文字层
+      ocrTextLayer.classList.remove('hidden');
+      ocrTextLayer.classList.add('active');
+      showToast('识别完成，可直接选中文字复制');
+    } else {
+      // 自动识别：结果已就绪，点「字」时即可显示
+      showToast('文字识别完成，点「字」查看');
+    }
   } catch (err) {
     console.error('[OCR] 识别失败:', err);
     showToast('文字识别失败');
+  } finally {
+    state.ocrRunning = false;
   }
 }
 

@@ -429,6 +429,12 @@ export function setupIpcHandlers(apiBaseUrl: string) {
       destroyAllScreenshotWindows();
       // Re-register so future cancel/copy/save still closes it
       registerScreenshotWindow(activeWin);
+      // 确保当前窗口成为 key window，使输入法候选词框能跟随到副屏
+      if (process.platform === 'darwin') {
+        activeWin.setAlwaysOnTop(true, 'floating');
+        activeWin.focus();
+        activeWin.moveTop();
+      }
     } else {
       destroyAllScreenshotWindows();
     }
